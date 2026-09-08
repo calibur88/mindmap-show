@@ -1,0 +1,580 @@
+/* ==========================================================================
+   Mind Map Show · 样式表
+   画布工作区；文件面板与详情面板分别挂在 Obsidian 左右 sidebar
+   ========================================================================== */
+
+:root {
+  --mms-gap: 8px;
+  --mms-panel-radius: var(--radius-m, 8px);
+  --mms-border: 1px solid var(--background-modifier-border);
+}
+
+/* ---------------------------------------------------------------- 三栏布局 */
+
+.mms-workspace {
+  display: flex;
+  align-items: stretch;
+  gap: var(--mms-gap);
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+  padding: var(--mms-gap);
+  box-sizing: border-box;
+}
+
+.mms-right-panel {
+  overflow-y: auto;
+  padding: var(--mms-gap);
+  box-sizing: border-box;
+}
+
+.mms-canvas-container {
+  position: relative;
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  container-type: inline-size;
+  container-name: mms-canvas;
+}
+
+/* ------------------------------------------------------------------ 通用块 */
+
+/* left-panel 根容器：absolute 撑满整个 sidebar 区域，flex column 给子 section 分空间 */
+.mms-left-panel {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+  background-color: var(--background-secondary);
+}
+
+.mms-section {
+  display: flex;
+  flex: 0 0 auto;
+  flex-direction: column;
+  min-height: 0;
+  padding: 8px 10px;
+  border-bottom: var(--mms-border);
+}
+
+.mms-section:last-of-type {
+  border-bottom: none;
+}
+
+/* M4：左栏各 section 比例分配
+   - 标签：贴顶，溢出滚动（≤ 25%）
+   - 文件树：flex 撑中间，溢出滚动（核心区）
+   - 警告：贴底，溢出滚动（≤ 30%），默认隐藏（设置开关）
+   - 状态卡（StatusCard 创建）：flex: 0 0 auto，贴最底 */
+.mms-section-tag {
+  flex: 0 1 auto;
+  max-height: 25%;
+}
+
+.mms-section-tree {
+  flex: 1 1 0;
+  min-height: 0;
+}
+
+.mms-section-warn {
+  flex: 0 1 auto;
+  max-height: 30%;
+}
+
+.mms-section-title {
+  margin: 0 0 6px;
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.mms-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.mms-empty-hint {
+  padding: 12px;
+  color: var(--text-faint);
+  font-size: 12px;
+  text-align: center;
+}
+
+/* -------------------------------------------------------------- 左栏：标签 */
+
+.mms-tag-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.mms-tag-item {
+  padding: 4px 8px;
+  border: var(--mms-border);
+  border-radius: 10px;
+  background-color: var(--background-primary);
+  color: var(--text-normal);
+  font-size: 13px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.mms-tag-item.is-active {
+  border-color: var(--interactive-accent);
+  color: var(--interactive-accent);
+}
+
+.mms-tag-count {
+  margin-left: 4px;
+  color: var(--text-faint);
+  font-size: 11px;
+}
+
+/* ---------------------------------------------------------- 左栏：文件树 */
+
+.mms-file-tree {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.mms-folder-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 26px;
+  padding: 4px 4px 2px;
+  color: var(--text-muted);
+  font-size: 12px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.mms-folder-row:hover {
+  color: var(--text-normal);
+}
+
+.mms-folder-toggle {
+  display: inline-block;
+  width: 12px;
+  font-size: 10px;
+  color: var(--text-faint);
+  text-align: center;
+}
+
+.mms-folder-name {
+  flex: 1 1 auto;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.mms-file-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  min-height: 28px;
+  padding: 4px 6px 4px 22px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 13px;
+}
+
+.mms-file-item:hover {
+  background-color: var(--background-modifier-hover);
+}
+
+.mms-file-item.is-active {
+  background-color: var(--background-modifier-active-hover);
+}
+
+.mms-file-name {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.mms-file-count {
+  flex: 0 0 auto;
+  color: var(--text-faint);
+  font-size: 11px;
+}
+
+/* ---------------------------------------------------------- 左栏：警告区 */
+
+.mms-warning-box {
+  max-height: 120px;
+  overflow-y: auto;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.mms-warning-item {
+  margin-bottom: 4px;
+  padding: 4px 6px;
+  border-left: 3px solid var(--text-faint);
+  background-color: var(--background-primary);
+  border-radius: 0 4px 4px 0;
+  white-space: normal;
+  word-break: break-word;
+}
+
+.mms-warning-item.severity-warning { border-left-color: var(--text-warning, #e8a33d); }
+.mms-warning-item.severity-error   { border-left-color: var(--text-error, #e35d5d); }
+.mms-warning-item.severity-info    { border-left-color: var(--text-accent, #7f9cf5); }
+
+/* -------------------------------------------------------- 左栏：状态卡片 */
+
+.mms-status-card {
+  position: sticky;
+  bottom: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border-top: var(--mms-border);
+  background-color: var(--background-primary);
+  font-size: 12px;
+}
+
+.mms-status-actions {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+/* ---------------------------------------------------------------- 中间栏 */
+
+.mms-canvas-toolbar {
+  display: flex;
+  align-items: center;
+  flex: 0 0 auto;
+  gap: 6px;
+  padding: 6px 8px;
+  border-bottom: var(--mms-border);
+  font-size: 12px;
+}
+
+.mms-canvas-toolbar .mms-spacer {
+  flex: 1 1 auto;
+}
+
+.mms-canvas-body {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  cursor: grab;
+  /* 手势由 CanvasViewport 接管（单指 pan / 双指 pinch），
+     不交给浏览器滚动缩放，否则会 pointercancel / 触发页面缩放 */
+  touch-action: none;
+}
+
+.mms-canvas-body.is-panning {
+  cursor: grabbing;
+  user-select: none;
+}
+
+.mms-canvas-footer {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 12px;
+  padding: 4px 8px;
+  border-top: var(--mms-border);
+  color: var(--text-faint);
+  font-size: 11px;
+}
+
+.mms-canvas-footer > span {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ---------------------------------------------------------------- 右栏 */
+
+.mms-info-card {
+  margin: 0 0 8px;
+  padding: 8px 10px;
+  border: var(--mms-border);
+  border-radius: var(--mms-panel-radius);
+  background-color: var(--background-primary);
+}
+
+.mms-info-card:last-child {
+  margin-bottom: 0;
+}
+
+.mms-info-card-title {
+  margin: 0 0 6px;
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.mms-info-row {
+  display: flex;
+  gap: 8px;
+  padding: 2px 0;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.mms-info-row .mms-info-key {
+  flex: 0 0 68px;
+  color: var(--text-faint);
+}
+
+.mms-info-row .mms-info-val {
+  flex: 1 1 auto;
+  word-break: break-word;
+}
+
+/* 节点注释（** 注释，斜体小字） */
+.mms-node-annotation {
+  margin-bottom: 4px;
+  padding: 4px 8px;
+  border-left: 2px solid var(--interactive-accent, #7f9cf5);
+  background: var(--background-modifier-hover);
+  border-radius: 0 4px 4px 0;
+  color: var(--text-muted);
+  font-size: 12px;
+  font-style: italic;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* ------------------------------------------------------------ 容器查询 */
+
+@supports (container-type: inline-size) {
+  @container mms-canvas (min-width: 500px) {
+    .mms-canvas-toolbar {
+      font-size: 13px;
+    }
+  }
+}
+
+/* -------------------------------------------------------------- 移动端 */
+
+/* 触摸目标不小于 44px，避免移动端误触 */
+@media (pointer: coarse) {
+  .mms-tag-item,
+  .mms-file-item {
+    min-height: 44px;
+  }
+}
+
+/* ------------------------------------------------------------ 画布与节点 */
+
+.mms-dom-holder,
+.mms-svg-holder {
+  position: relative;
+  width: max-content;
+  height: max-content;
+  min-width: 100%;
+}
+
+.mms-dom-canvas {
+  position: relative;
+}
+
+.mms-dom-layer {
+  position: absolute;
+  inset: 0;
+}
+
+.mms-dom-node {
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  padding: 10px 14px;
+  border: 1px solid var(--background-modifier-border);
+  border-left: 3px solid var(--text-accent, #7f9cf5);
+  border-radius: 6px;
+  background-color: var(--background-primary);
+  text-align: center;
+  overflow: hidden;
+  transition: box-shadow 0.12s ease;
+}
+
+.mms-dom-node:hover {
+  box-shadow: 0 0 0 2px var(--interactive-accent);
+}
+
+.mms-dom-node.is-auto {
+  border-style: dashed;
+  opacity: 0.55;
+}
+
+.mms-dom-node.mms-depth-0 { border-left-color: #7f9cf5; }
+.mms-dom-node.mms-depth-1 { border-left-color: #5dcaa5; }
+.mms-dom-node.mms-depth-2 { border-left-color: #ef9f27; }
+.mms-dom-node.mms-depth-3 { border-left-color: #ed93b1; }
+.mms-dom-node.mms-depth-4 { border-left-color: #85b7eb; }
+.mms-dom-node.mms-depth-5,
+.mms-dom-node.mms-depth-6 { border-left-color: #b4b2a9; }
+
+.mms-node-text {
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1.4;
+  text-align: center;
+  word-break: break-word;
+}
+
+.mms-node-content {
+  margin-top: 4px;
+  color: var(--text-muted);
+  font-size: 11px;
+  line-height: 1.4;
+  text-align: center;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
+.mms-node-badges {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 3px;
+  margin-top: 4px;
+}
+
+.mms-badge {
+  padding: 1px 5px;
+  border-radius: 8px;
+  background-color: var(--background-modifier-hover);
+  color: var(--text-muted);
+  font-size: 10px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+}
+
+.mms-badge-image { color: var(--text-accent, #7f9cf5); }
+.mms-badge-mms    { color: #5dcaa5; }
+.mms-badge-url    { color: #85b7eb; }
+.mms-badge-ref    { color: #ef9f27; }
+
+/* -------------------------------------------------------------- 连线 */
+
+.mms-edges {
+  pointer-events: none;
+  overflow: visible;
+}
+
+/* -------------------------------------------------------- 全景视图 SVG */
+
+.mms-svg-canvas {
+  display: block;
+}
+
+.mms-svg-node rect {
+  fill: var(--background-primary);
+  stroke: var(--background-modifier-border);
+  stroke-width: 1;
+}
+
+.mms-svg-node.mms-depth-0 rect { stroke: #7f9cf5; }
+.mms-svg-node.mms-depth-1 rect { stroke: #5dcaa5; }
+.mms-svg-node.mms-depth-2 rect { stroke: #ef9f27; }
+.mms-svg-node.mms-depth-3 rect { stroke: #ed93b1; }
+
+.mms-svg-text {
+  fill: var(--text-normal);
+  font-size: 12px;
+}
+
+.mms-svg-sub {
+  fill: var(--text-faint);
+  font-size: 11px;
+  dominant-baseline: central;
+}
+
+.mms-svg-empty {
+  fill: var(--text-faint);
+  font-size: 13px;
+}
+
+/* ------------------------------------------------------------ 通用小件 */
+
+.mms-canvas-name {
+  font-weight: 500;
+}
+
+.mms-tag-chip {
+  padding: 1px 6px;
+  border-radius: 8px;
+  background-color: var(--background-modifier-hover);
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.mms-mini-btn {
+  padding: 2px 8px;
+  border: var(--mms-border);
+  border-radius: 4px;
+  background-color: var(--background-primary);
+  color: var(--text-normal);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.mms-mini-btn:hover {
+  background-color: var(--background-modifier-hover);
+}
+
+.mms-mini-btn.is-active {
+  border-color: var(--interactive-accent);
+  color: var(--interactive-accent);
+}
+
+.mms-info-actions {
+  display: flex;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.mms-status-btn {
+  flex: 0 0 auto;
+  padding: 2px 8px;
+  border: var(--mms-border);
+  border-radius: 4px;
+  background-color: var(--background-primary);
+  color: var(--text-normal);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.mms-status-label {
+  color: var(--text-error, #e35d5d);
+}
+
+/* 容器查询：画布够宽时正文多显示几行 */
+@supports (container-type: inline-size) {
+  @container mms-canvas (min-width: 520px) {
+    .mms-node-content {
+      -webkit-line-clamp: 4;
+    }
+  }
+}

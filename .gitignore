@@ -1,0 +1,13 @@
+.workbuddy/
+node_modules/
+dist/
+main.js
+*.js.map
+*.tsbuildinfo
+
+# 本地测试 vault（local 后缀 = 本地专用，不入库）
+test-vault-local/
+build.local.json
+
+.DS_Store
+Thumbs.db
