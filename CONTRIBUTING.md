@@ -290,7 +290,40 @@ scope取值：`core`、`render`、`ui`、`views`、`settings`、`controller`、`
 | 禁止提交 | `node_modules/`、`dist/`、`main.js`、`*.js.map`、`test-vault-local/`、`.workbuddy/`、`*.tsbuildinfo`、个人临时文件 |
 | 必须提交 | 源码改动、对应文档改动、新增／改动的测试用例、`demo/`示例、`manifest.json`与`package.json`的版本号 |
 
-## 11. 提交流程
+## 11. 分支规范
+
+### 11.1 分支与命名
+
+| 分支 | 命名 | 用途 | 来源 | 合入 |
+|---|---|---|---|---|
+| 主分支 | `master` | 唯一发布分支，每个可发布状态对应一个标签 | — | 由功能／修复／文档分支经PR合入 |
+| 功能分支 | `feature/<短名>` | 新增功能 | `master` | PR → `master` |
+| 修复分支 | `fix/<短名>` | 缺陷修复 | `master` | PR → `master` |
+| 文档分支 | `docs/<短名>` | 仅文档改动 | `master` | PR → `master` |
+| 发版分支 | `release/<版本>` | 发版准备：版本号三处同步、CHANGELOG定稿 | `master` | PR → `master`，合入后打标签 |
+
+命名规则：
+
+- 主分支固定为`master`，不得直接强推或改写其历史；
+- 分支名一律英文小写，词间用连字符，短名不超过3个词，如`feature/settings-debounce`；
+- 禁止用中文或空格作分支名；
+- 一个分支只做一件事，分支名与提交信息的`scope`保持一致。
+
+### 11.2 标签
+
+- 标签名与插件版本号一致，形如`v1.0.0`，不加额外修饰；
+- 一律用附注标签：`git tag -a v1.0.0 -m "MMS 1.0.0：一句话说明"`；
+- 只在`master`上打标签，且必须在§3.1的三处版本同步完成之后；
+- 推送标签：`git push origin v1.0.0`。打标签与推送均属git写操作，需明确许可。
+
+### 11.3 合并
+
+1. PR＋代码评审；
+2. 校验全绿：类型检查、单测、构建；
+3. squash merge到`master`，提交信息按§10.1书写；
+4. 需要发版时按§11.2打标签并推送。
+
+## 12. 提交流程
 
 > **核心原则：未经明确许可，不得执行任何git写操作**（`add`／`commit`／`push`／`reset`／`checkout --`／`tag`等）。
 
@@ -307,7 +340,7 @@ git config --get remote.origin.url      # 确认远端地址
 git config --get credential.helper      # 确认凭据助手
 ```
 
-### 11.1 常见问题：远端跟踪引用不刷新
+### 12.1 常见问题：远端跟踪引用不刷新
 
 | 项 | 说明 |
 |---|---|
@@ -331,7 +364,7 @@ git log --oneline origin/master..master  # 3.为空才是真的无未推送提�
 
 > 标签同理：用`git ls-remote --tags origin`核对远端是否已有`refs/tags/vX.Y.Z`，不要凭本地`git tag -l`判断标签是否已推送。
 
-## 12. 本地测试与恢复
+## 13. 本地测试与恢复
 
 会污染的文件：
 
