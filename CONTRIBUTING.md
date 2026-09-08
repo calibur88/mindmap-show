@@ -307,6 +307,30 @@ git config --get remote.origin.url      # 确认远端地址
 git config --get credential.helper      # 确认凭据助手
 ```
 
+### 11.1 常见问题：远端跟踪引用不刷新
+
+| 项 | 说明 |
+|---|---|
+| 现象 | `git push`已成功，但`git status -sb`仍显示`[ahead N]`；`git fetch`打印更新日志后`git rev-parse origin/master`仍返回旧值；`git update-ref`报成功但引用不变 |
+| 原因 | 受限执行环境（工具沙箱、只读挂载）会拦截对`.git/packed-refs`与`.git/refs/**`的写入，本地远端跟踪引用`refs/remotes/origin/*`无法落盘 |
+| 影响 | 仅本地记账失真，远端仓库已是最新；**不得据此重复推送** |
+| 判别 | 一律以远端实际状态为准，不用本地`git status`判断推送结果 |
+
+核验与处理：
+
+```bash
+git ls-remote origin refs/heads/master   # 1.读远端真实HEAD
+git rev-parse master                     # 2.本地HEAD；与第1步一致即推送已成功
+git log --oneline origin/master..master  # 3.为空才是真的无未推送提交（引用滞后时会误报）
+```
+
+1. 第1步与第2步的commit一致时，确认推送成功，不重推；
+2. 在本机终端（非受限环境）执行`git fetch --prune`复位跟踪引用；
+3. 仍不刷新时用显式refspec强制覆盖：`git fetch origin "+refs/heads/master:refs/remotes/origin/master"`；
+4. 以上都无效时，以`git ls-remote`为唯一判别依据，忽略`git status`的`ahead`提示。
+
+> 标签同理：用`git ls-remote --tags origin`核对远端是否已有`refs/tags/vX.Y.Z`，不要凭本地`git tag -l`判断标签是否已推送。
+
 ## 12. 本地测试与恢复
 
 会污染的文件：
