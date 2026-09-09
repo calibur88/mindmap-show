@@ -1,5 +1,5 @@
 /**
- * @module core/parser/demo.test
+ * @module test/core/parser/demo.test
  * @description 用 demo/ 下的真实素材做冒烟回归，同时覆盖布局算法
  *
  * 分组与 demo/ 的目录一一对应，目录名即功能用例名
@@ -8,10 +8,10 @@
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { parseMms } from './index';
-import { layoutTree } from '../layout';
-import { buildOutgoingRefs, resolveCrossFileRefs } from '../index-builder';
-import type { IWarning, MmsLayout, MmsLineStyle } from '../../host/types';
+import { parseMms } from '../../../src/core/parser';
+import { layoutTree } from '../../../src/core/layout';
+import { buildOutgoingRefs, resolveCrossFileRefs } from '../../../src/core/index-builder';
+import type { IWarning, MmsLayout, MmsLineStyle } from '../../../src/host/types';
 
 const readDemo = (name: string): string =>
   readFileSync(path.resolve(process.cwd(), 'demo', name), 'utf8');

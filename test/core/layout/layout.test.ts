@@ -1,12 +1,12 @@
 /**
- * @module core/layout/layout.test
+ * @module test/core/layout/layout.test
  * @description 四方向布局的单元测试：验证主轴推进方向与层级翻转
  */
 
 import { describe, expect, it } from 'vitest';
-import { parseMms } from '../parser';
-import { layoutTree } from './index';
-import type { MmsLayout } from '../../host/types';
+import { parseMms } from '../../../src/core/parser';
+import { layoutTree } from '../../../src/core/layout';
+import type { MmsLayout } from '../../../src/host/types';
 
 const doc = parseMms('# R\n## A\n## B', 'demo/t.mms');
 

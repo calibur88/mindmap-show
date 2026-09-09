@@ -1,10 +1,10 @@
 /**
- * @module core/frontmatter.test
+ * @module test/core/frontmatter.test
  * @description Frontmatter 剥离与字段提取的单元测试
  */
 
 import { describe, expect, it } from 'vitest';
-import { resolveLayout, resolveLineStyle, splitFrontmatter } from './frontmatter';
+import { resolveLayout, resolveLineStyle, splitFrontmatter } from '../../src/core/frontmatter';
 
 describe('splitFrontmatter', () => {
   it('首行不是 --- 时不解析，正文为全文', () => {

@@ -36,6 +36,7 @@ mindmap-show/
 │  └─ utils/                DOM工具与键值构造
 ├─ demo/                    入库示例库（按功能用例分目录，15个.mms）
 ├─ docs/                    .mms语言规范
+├─ test/                    单测目录（镜像 src/ 结构，与被测模块一一对应）
 ├─ styles.css               全部样式集中一处
 ├─ manifest.json            插件清单
 ├─ esbuild.config.mjs       构建脚本（dev／once／production三种模式）
@@ -48,6 +49,7 @@ mindmap-show/
 | 目录 | 用途 | 是否入库 |
 |---|---|---|
 | `demo/` | 随仓库提交的示例素材库，按功能用例分目录，供功能验收与语法演示 | 是 |
+| `test/` | 单测目录，镜像`src/`结构存放`.test.ts`，由vitest自动发现 | 是 |
 | `test-vault-local/` | 本地Obsidian测试vault，`local`后缀表示本地专用 | 否 |
 | `dist/` | `npm run build`产出的发布包 | 否 |
 | `test-vault-local/.obsidian/plugins/mindmap-show/` | `dev`／`once`产物的落地目录，Obsidian直接加载这里 | 否 |
@@ -189,7 +191,7 @@ npm run dev                                             # watch构建，直出�
 node esbuild.config.mjs once                            # 单次构建，同上目录
 npm run build                                           # tsc --noEmit + 产出dist/
 npx tsc --noEmit                                        # 严格模式类型检查
-npx vitest run                                          # 95例单测
+npx vitest run                                          # 96例单测
 ```
 
 - 构建流程：入口`src/main.ts` → esbuild打包为单文件`main.js` → 连同`manifest.json`与`styles.css`复制到输出目录；输出目录优先级为环境变量`MMS_OUT_DIR`＞`production`时的`dist/`＞其他情况的测试vault插件目录；
@@ -200,12 +202,12 @@ npx vitest run                                          # 95例单测
 
 | 套件 | 领域 | 例数 |
 |---|---|---|
-| `src/core/frontmatter.test.ts` | frontmatter五个固定键与非法值回退 | 10 |
-| `src/core/parser/parser.test.ts` | 节点层级、正文、注释、跨边、节点引用、嵌入 | 26 |
-| `src/core/parser/demo.test.ts` | 按 `demo/` 目录分组的真实素材冒烟与布局算法 | 35 |
-| `src/core/index-builder.test.ts` | 跨文件引用解析、节点引用解析与出链聚合 | 8 |
-| `src/core/layout/layout.test.ts` | 四方向布局的主轴推进与翻转 | 5 |
-| `src/render/shared/edges.test.ts` | 连线锚点、直线／折线插值与曲线安全推力 | 12 |
+| `test/core/frontmatter.test.ts` | frontmatter五个固定键与非法值回退 | 10 |
+| `test/core/parser/parser.test.ts` | 节点层级、正文、注释、跨边、节点引用、嵌入 | 26 |
+| `test/core/parser/demo.test.ts` | 按 `demo/` 目录分组的真实素材冒烟与布局算法 | 35 |
+| `test/core/index-builder.test.ts` | 跨文件引用解析、节点引用解析与出链聚合 | 8 |
+| `test/core/layout/layout.test.ts` | 四方向布局的主轴推进与翻转 | 5 |
+| `test/render/shared/edges.test.ts` | 连线锚点、直线／折线插值与曲线安全推力 | 12 |
 | 合计 | — | 96 |
 
 ## 5. 文档索引

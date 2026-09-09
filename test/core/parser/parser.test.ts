@@ -1,10 +1,10 @@
 /**
- * @module core/parser/parser.test
+ * @module test/core/parser/parser.test
  * @description .mms 语法解析的单元测试
  */
 
 import { describe, expect, it } from 'vitest';
-import { parseMms } from '../parser';
+import { parseMms } from '../../../src/core/parser';
 
 const parse = (body: string, path = 'demo/t.mms') => parseMms(body, path);
 

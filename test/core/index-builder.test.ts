@@ -1,12 +1,12 @@
 /**
- * @module core/index-builder.test
+ * @module test/core/index-builder.test
  * @description 跨文件引用解析、节点引用解析与出链聚合的单元测试
  */
 
 import { describe, expect, it } from 'vitest';
-import { buildOutgoingRefs, resolveCrossFileNodeRefs, resolveCrossFileRefs } from './index-builder';
-import { parseMms } from './parser';
-import type { IWarning } from '../host/types';
+import { buildOutgoingRefs, resolveCrossFileNodeRefs, resolveCrossFileRefs } from '../../src/core/index-builder';
+import { parseMms } from '../../src/core/parser';
+import type { IWarning } from '../../src/host/types';
 
 describe('resolveCrossFileRefs', () => {
   it('解析 文件.mms 节点 形式的跨文件引用（空格分隔）', () => {

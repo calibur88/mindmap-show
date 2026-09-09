@@ -89,9 +89,10 @@
 - `src/core/`与`src/render/`禁止`import 'obsidian'`，宿主能力一律通过接口注入；
 - `local`后缀目录一律本地专用、不入库（当前为`test-vault-local/`），禁止在其内放需提交的内容；
 - `demo/`是入库示例库，任何语法变更都必须同步补一个示例文件；
+- `test/`是入库单测目录，镜像`src/`结构，禁止把测试文件散落在`src/`内；
 - `dist/`是构建产物，不入库；
 - 全部样式集中在仓库根目录`styles.css`，禁止在typescript里内联样式；
-- 单测只覆盖`src/core/`，文件命名`*.test.ts`，与被测模块同目录。
+- 单测覆盖`src/core/`与`src/render/shared/`的纯逻辑，文件命名`*.test.ts`，置于`test/`下与`src/`同结构的镜像目录。
 
 ## 3. 版本号规则
 
@@ -250,8 +251,8 @@ function pushBodyLine(line: string): void {
 
 ## 9. 测试规范
 
-- 运行器：vitest，`environment: node`，`include: ['src/**/*.test.ts']`，用例自动发现、无需手动注册；
-- 套件组织：一个被测模块一个`.test.ts`，与被测模块同目录；
+- 运行器：vitest，`environment: node`，`include: ['test/**/*.test.ts']`，用例自动发现、无需手动注册；
+- 套件组织：一个被测模块一个`.test.ts`，置于`test/`下与`src/`同结构的镜像目录中（如`src/core/parser/index.ts`对应`test/core/parser/index.test.ts`）；
 - 必须新增用例的时机：改`.mms`语法解析、改布局算法、改跨文件引用或反链索引、`demo/`增删示例；
 - 验收类用例直接读`demo/`下的真实素材，避免测试数据与真实素材脱节；
 - 提交前`npx vitest run`必须全绿，且`npx tsc --noEmit`零错误。

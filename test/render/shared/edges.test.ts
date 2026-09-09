@@ -1,11 +1,11 @@
 /**
- * @module render/shared/edges.test
+ * @module test/render/shared/edges.test
  * @description 连线路径的单元测试：锚点取值、直线插值与曲线安全推力
  */
 
 import { describe, expect, it } from 'vitest';
-import { buildEdgePath } from './edges';
-import type { ILayoutNode, MmsLayout, MmsLineStyle } from '../../host/types';
+import { buildEdgePath } from '../../../src/render/shared/edges';
+import type { ILayoutNode, MmsLayout, MmsLineStyle } from '../../../src/host/types';
 
 const node = (x: number, y: number, width = 100, height = 40): ILayoutNode => ({
   id: `${x},${y}`,
