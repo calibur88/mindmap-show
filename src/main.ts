@@ -3,7 +3,7 @@
  * @description 插件入口。只做装配：宿主适配器 → 索引/选中总线 → 视图注册 → 命令/ribbon
  */
 
-import { Plugin, TFile } from 'obsidian';
+import { Plugin, TFile, TFolder } from 'obsidian';
 import { MmsIndex } from './controller/refresh';
 import { MmsSelection } from './controller/selection';
 import { ObsidianOpener } from './host/obsidian/opener';
@@ -30,6 +30,8 @@ export default class MmsPlugin extends Plugin {
   private settingsDirty = false;
   private vaultTimer: number | null = null;
   private detailAutoOpened = false;
+  /** 防抖窗口内是否累积了需要广播重绘的设置变更（静默更新不置位） */
+  private settingsBroadcast = false;
 
   async onload(): Promise<void> {
     await this.loadSettings();
@@ -65,6 +67,9 @@ export default class MmsPlugin extends Plugin {
           getSettings: () => this.settings,
           onSettingsChange: (fn) => this.onSettingsChange(fn),
           openDetailPanel: () => void this.openDetailPanel(),
+          getCollapsedFolders: () => this.settings.collapsedFolders,
+          persistCollapsedFolders: (folders) =>
+            this.updateSettingsSilently({ collapsedFolders: folders }),
         }),
     );
     this.registerView(
@@ -110,12 +115,16 @@ export default class MmsPlugin extends Plugin {
       }),
     );
     this.registerEvent(
-      this.app.vault.on('rename', (file) => {
+      this.app.vault.on('rename', (file, oldPath) => {
+        // 文件夹重命名：先把折叠记录迁移到新路径，再触发重扫
+        if (file instanceof TFolder) this.remapCollapsedFolders(oldPath, file.path);
         if (!(file instanceof TFile) || file.extension === 'mms') this.scheduleVaultRescan();
       }),
     );
     this.registerEvent(
       this.app.vault.on('delete', (file) => {
+        // 文件夹删除：清掉它及子路径的折叠记录，再触发重扫
+        if (file instanceof TFolder) this.pruneCollapsedFolders(file.path);
         if (!(file instanceof TFile) || file.extension === 'mms') this.scheduleVaultRescan();
       }),
     );
@@ -143,6 +152,17 @@ export default class MmsPlugin extends Plugin {
   updateSettings(patch: Partial<MmsSettings>): void {
     this.settings = { ...this.settings, ...patch };
     this.settingsDirty = true;
+    this.settingsBroadcast = true;
+    this.scheduleSettingsFlush();
+  }
+
+  /**
+   * 静默合并：只改内存与落盘，不广播设置变更、不触发重扫。
+   * 供文件夹折叠等已做局部 DOM 更新的 UI 状态使用，避免整栏重绘丢滚动位置
+   */
+  updateSettingsSilently(patch: Partial<MmsSettings>): void {
+    this.settings = { ...this.settings, ...patch };
+    this.settingsDirty = true;
     this.scheduleSettingsFlush();
   }
 
@@ -160,14 +180,17 @@ export default class MmsPlugin extends Plugin {
     if (idx >= 0) this.settingsListeners.splice(idx, 1);
   }
 
-  /** 防抖落盘 + 广播：先保存，再让各视图按新设置重绘，最后整库重扫 */
+  /** 防抖落盘 + 广播：先保存；非静默变更再让各视图按新设置重绘并整库重扫 */
   private scheduleSettingsFlush(): void {
     if (this.settingsTimer !== null) window.clearTimeout(this.settingsTimer);
     this.settingsTimer = window.setTimeout(() => {
       this.settingsTimer = null;
+      const broadcast = this.settingsBroadcast;
+      this.settingsBroadcast = false;
       void (async () => {
         await this.saveData(this.settings);
         this.settingsDirty = false;
+        if (!broadcast) return;
         for (const fn of [...this.settingsListeners]) fn();
         await this.index?.refresh();
       })();
@@ -181,6 +204,38 @@ export default class MmsPlugin extends Plugin {
       this.vaultTimer = null;
       void this.index?.refresh();
     }, VAULT_RESCAN_DEBOUNCE_MS);
+  }
+
+  /**
+   * 文件夹重命名后迁移折叠记录：精确匹配换新路径，子路径按前缀替换。
+   * 根目录「/」不可重命名，无需处理其边界
+   */
+  private remapCollapsedFolders(oldPath: string, newPath: string): void {
+    const list = this.settings.collapsedFolders;
+    if (list.length === 0) return;
+    const prefix = `${oldPath}/`;
+    let changed = false;
+    const next = list.map((p) => {
+      if (p === oldPath) {
+        changed = true;
+        return newPath;
+      }
+      if (p.startsWith(prefix)) {
+        changed = true;
+        return `${newPath}${p.slice(oldPath.length)}`;
+      }
+      return p;
+    });
+    if (changed) this.updateSettingsSilently({ collapsedFolders: next });
+  }
+
+  /** 文件夹删除后清掉它及子路径的折叠记录 */
+  private pruneCollapsedFolders(folderPath: string): void {
+    const list = this.settings.collapsedFolders;
+    if (list.length === 0) return;
+    const prefix = `${folderPath}/`;
+    const next = list.filter((p) => p !== folderPath && !p.startsWith(prefix));
+    if (next.length !== list.length) this.updateSettingsSilently({ collapsedFolders: next });
   }
 
   private async loadSettings(): Promise<void> {

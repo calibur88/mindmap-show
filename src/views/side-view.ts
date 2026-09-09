@@ -21,6 +21,10 @@ export interface IMmsSideViewDeps {
   onSettingsChange: (fn: () => void) => () => void;
   /** 唤起右侧详情面板：右栏被手动关掉后，左栏是唯一的再入口 */
   openDetailPanel: () => void;
+  /** 读当前持久化的折叠文件夹列表（存于 data.json） */
+  getCollapsedFolders: () => string[];
+  /** 持久化折叠文件夹列表。静默写入：不触发整栏重渲染，滚动位置不受影响 */
+  persistCollapsedFolders: (folders: string[]) => void;
 }
 
 /** 左 sidebar 内的 MMS 文件面板：标签云 + 文件树 + 解析警告 + 状态卡 */
@@ -57,6 +61,8 @@ export class MmsSideView extends ItemView {
         this.render();
       },
       () => this.deps.openDetailPanel(),
+      this.deps.getCollapsedFolders,
+      this.deps.persistCollapsedFolders,
     );
     this.deps.index.onUpdate(this.boundRender);
     this.unsubscribeSettings = this.deps.onSettingsChange(this.boundRender);

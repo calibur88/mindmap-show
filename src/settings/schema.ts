@@ -26,4 +26,6 @@ export interface MmsSettings {
   panoramaNodeGap: number;
   /** 全景视图：相邻层之间的间距（像素） */
   panoramaLevelGap: number;
+  /** 左栏文件树保持折叠的文件夹路径（「/」= 根），随文件夹重命名/删除自动迁移 */
+  collapsedFolders: string[];
 }

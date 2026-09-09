@@ -1,7 +1,7 @@
 # 项目整体架构
 
 > 本文是Mind Map Show（MMS）工程的权威架构说明。文档版本：v1.2（2026-09-09）
-> 插件版本：1.1.0 · 语法版本：`.mms` v1 · 最低依赖：Obsidian1.4.0 · 语言：TypeScript5.7（严格模式）
+> 插件版本：1.2.0 · 语法版本：`.mms` v1 · 最低依赖：Obsidian1.4.0 · 语言：TypeScript5.7（严格模式）
 
 ## 1. 项目定位
 
@@ -81,8 +81,8 @@ main.ts                      装配：new适配器 → new索引 → registerVie
  │   ├─ shared/edges.ts      两种视图共用的连线路径（line／curve）
  │   └─ canvas-viewport.ts   鼠标／触控视口与缩放
  ├─ ui/
- │   ├─ left-panel.ts        标签云＋搜索栏＋文件树＋调试信息＋状态卡
- │   ├─ right-panel.ts       节点详情／注释／标签／引用链（`<=>`＋`::`）／入链（含本文件）／出链（文件级）
+ │   ├─ left-panel.ts        标签云＋搜索栏＋文件树（折叠持久化）＋调试信息＋状态卡
+ │   ├─ right-panel.ts       节点详情／注释／标签／引用链／入链／出链（三卡条目高亮＋两段式跳转）
  │   └─ status-card.ts       底部操作条：刷新＋查看详情
  ├─ views/
  │   ├─ mms-view.ts          FileView，接管`.mms`扩展名
@@ -161,12 +161,20 @@ listMmsFiles → readFile → parseMms → resolveCrossFileRefs（回填 crossRe
    → MmsIndex.refresh() 整库重扫 → onUpdate广播 → 三视图最终一致
 ```
 
+折叠状态静默链路（不走防抖广播）：
+
+```
+左栏点击文件夹 → MmsPlugin.updateSettingsSilently → settings.collapsedFolders
+   push/splice → saveData即时落盘（不广播、不重扫，左栏局部更新class不重绘整树）
+```
+
 vault 事件链路（500毫秒防抖）：
 
 ```
 .mms 编辑／重命名／删除 → vault.on 事件 → MmsIndex.refresh() 整库重扫
    → onUpdate广播 → 三视图同步；文件移动后旧路径的 getDoc 未命中，
      画布与右栏显示「文件已移动或索引未同步」降级提示
+文件夹重命名／删除 → 同步迁移／清理 settings.collapsedFolders 中的路径记录
 ```
 
 节点选中链路：
@@ -175,6 +183,8 @@ vault 事件链路（500毫秒防抖）：
 画布点击节点 → MmsSelection.set(文件路径, 节点id) → 订阅者回调
    → 右栏渲染节点详情 + 画布高亮该节点（data-node-id 匹配）
    （右栏「跳转」反向选中时同样触发画布高亮）
+右栏三卡交互：条目单击高亮（互斥）；「跳转」按钮未高亮→跳节点（走选中链路），
+   高亮后→openSource跳源码行（入链跳来源节点、出链跳本文件`<=>`行）
 ```
 
 状态存放说明：

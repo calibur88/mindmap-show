@@ -149,6 +149,8 @@ export interface IBacklink {
   sourcePath: string;
   /** 来源行号（1 起） */
   sourceLine: number;
+  /** 来源节点 id（含 `<=>` 的节点），供右栏「跳节点」直接选中 */
+  sourceNodeId: string;
 }
 
 /** 一条出链：本文件 `<=>` 指向外部文件的节点，由索引构建器聚合 */
@@ -161,6 +163,8 @@ export interface IOutlink {
   sourceNodeId: string;
   /** 出链所在的源节点文本 */
   sourceText: string;
+  /** `<=>` 在本文件中的行号（1 起），供右栏「跳源码」定位 */
+  sourceLineNo: number;
   /** 目标节点 id，用于跳转定位；未解析时为 null */
   targetNodeId: string | null;
   /** 是否已解析到真实存在的节点（false 时右栏显示灰色断链） */

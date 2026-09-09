@@ -27,19 +27,23 @@ export interface IRightPanelActions {
 }
 
 export class RightPanel {
+  /** 当前高亮的交互行（引用链 / 入链 / 出链），null 表示无高亮。面板重渲染即失效 */
+  private highlightedItem: HTMLElement | null = null;
+
   constructor(
     private container: HTMLElement,
     private actions: IRightPanelActions,
   ) {}
 
   render(data: IRightPanelData): void {
+    this.clearHighlight();
     this.container.empty();
     this.renderSource(data.doc);
     this.renderNode(data.doc, data.nodeId);
     this.renderTags(data.doc);
     this.renderRefChain(data.doc, data.nodeId);
     this.renderInlinks(data.inlinks, data.doc.filePath);
-    this.renderOutlinks(data.outlinks);
+    this.renderOutlinks(data.outlinks, data.doc);
     this.renderNodeNote(data.doc, data.nodeId);
     this.renderEmbeds(data.doc, data.nodeId);
   }
@@ -49,6 +53,7 @@ export class RightPanel {
    * detail-view 传入 hint 用于「文件已移动 / 索引未同步」的降级提示
    */
   renderEmpty(hint?: string): void {
+    this.clearHighlight();
     this.container.empty();
     this.container.appendChild(el('div', { cls: 'mms-empty-hint', text: hint ?? '未打开 .mms 文件' }));
   }
@@ -67,7 +72,7 @@ export class RightPanel {
     parent.appendChild(row);
   }
 
-  /** 一条「值 + 跳转按钮」的行，供引用链 / 入链 / 出链共用 */
+  /** 一条「值 + 跳转按钮」的行，无高亮交互，供嵌入资源等普通卡使用 */
   private jumpRow(parent: HTMLElement, value: string, onJump: () => void, broken = false): void {
     const row = el('div', { cls: 'mms-info-row' });
     row.appendChild(el('span', { cls: `mms-info-val${broken ? ' is-broken' : ''}`, text: value }));
@@ -75,6 +80,72 @@ export class RightPanel {
       const jump = el('button', { cls: 'mms-mini-btn', text: '跳转', attr: { type: 'button' } });
       jump.addEventListener('click', onJump);
       row.appendChild(jump);
+    }
+    parent.appendChild(row);
+  }
+
+  /** 清除当前高亮。每次面板重渲染入口处调用 */
+  private clearHighlight(): void {
+    this.highlightedItem?.classList.remove('is-highlighted');
+    this.highlightedItem = null;
+  }
+
+  /** 切换高亮：再次单击取消；高亮 A 后单击 B 时先取消 A（互斥） */
+  private toggleHighlight(itemEl: HTMLElement): void {
+    if (this.highlightedItem === itemEl) {
+      this.clearHighlight();
+      return;
+    }
+    this.clearHighlight();
+    itemEl.classList.add('is-highlighted');
+    this.highlightedItem = itemEl;
+  }
+
+  /**
+   * 交互行绑定：单击条目（排除按钮区域）切换高亮；
+   * 跳转按钮在高亮时走 onJumpSource（跳源码行），否则走 onJumpNode（跳节点）。
+   * onJumpSource 传 null（如出链无源码行概念）时始终走 onJumpNode
+   */
+  private setupItemInteraction(
+    itemEl: HTMLElement,
+    jumpBtn: HTMLElement,
+    onJumpNode: () => void,
+    onJumpSource: (() => void) | null,
+  ): void {
+    itemEl.addEventListener('click', (evt) => {
+      // 按钮区域有自己的点击语义，不参与高亮切换
+      if (evt.target instanceof Node && jumpBtn.contains(evt.target)) return;
+      this.toggleHighlight(itemEl);
+    });
+    jumpBtn.addEventListener('click', () => {
+      if (this.highlightedItem === itemEl && onJumpSource) {
+        this.clearHighlight();
+        onJumpSource();
+      } else {
+        onJumpNode();
+      }
+    });
+  }
+
+  /**
+   * 一条可交互的「值 + 跳转按钮」行，供引用链 / 入链 / 出链共用。
+   * 断链条目无按钮，但保留单击高亮
+   */
+  private interactiveRow(
+    parent: HTMLElement,
+    value: string,
+    onJumpNode: () => void,
+    onJumpSource: (() => void) | null,
+    broken = false,
+  ): void {
+    const row = el('div', { cls: 'mms-info-row mms-info-row--interactive' });
+    row.appendChild(el('span', { cls: `mms-info-val${broken ? ' is-broken' : ''}`, text: value }));
+    if (!broken) {
+      const jump = el('button', { cls: 'mms-jump-btn', text: '跳转', attr: { type: 'button' } });
+      this.setupItemInteraction(row, jump, onJumpNode, onJumpSource);
+      row.appendChild(jump);
+    } else {
+      row.addEventListener('click', () => this.toggleHighlight(row));
     }
     parent.appendChild(row);
   }
@@ -145,19 +216,21 @@ export class RightPanel {
     for (const ref of node.crossRefs) {
       const name = ref.resolved ? shortNodeName(ref.targetNodeId) : ref.rawTarget;
       const label = ref.label ? `（${ref.label}）` : '';
-      this.jumpRow(
+      this.interactiveRow(
         card,
         ref.resolved ? `→ ${name}${label}` : `? ${name}`,
         () => this.actions.openAndSelect(ref.targetFilePath, ref.targetNodeId),
+        () => this.actions.openSource(doc.filePath, ref.lineNo),
         !ref.resolved,
       );
     }
     for (const ref of node.nodeRefs) {
       const name = ref.resolved ? shortNodeName(ref.targetNodeId) : ref.rawTarget;
-      this.jumpRow(
+      this.interactiveRow(
         card,
         `:: ${name}`,
         () => this.actions.openAndSelect(ref.targetFilePath, ref.targetNodeId),
+        () => this.actions.openSource(doc.filePath, ref.lineNo),
         !ref.resolved,
       );
     }
@@ -175,16 +248,18 @@ export class RightPanel {
     }
     for (const link of inlinks) {
       const source = link.sourcePath === filePath ? '本文件' : link.sourcePath;
-      this.jumpRow(
+      // 未高亮 → 跳来源节点（画布选中）；高亮 → 跳来源文件的 `<=>` 源码行
+      this.interactiveRow(
         card,
         `${source} → 第 ${link.sourceLine} 行`,
+        () => this.actions.openAndSelect(link.sourcePath, link.sourceNodeId),
         () => this.actions.openSource(link.sourcePath, link.sourceLine),
       );
     }
   }
 
   /** 出链：文件级的对外 `<=>` 聚合（同文件引用见「引用链」卡） */
-  private renderOutlinks(outlinks: IOutlink[]): void {
+  private renderOutlinks(outlinks: IOutlink[], doc: IParsedDoc): void {
     const card = this.card('出链（文件级）');
     if (outlinks.length === 0) {
       card.appendChild(el('div', { cls: 'mms-empty-hint', text: '当前文件未引用外部节点' }));
@@ -194,10 +269,12 @@ export class RightPanel {
       const value = link.resolved
         ? `${link.targetPath} → 第 ${link.targetLine} 行`
         : `${link.targetPath}（断链）`;
-      this.jumpRow(
+      // 未高亮 → 跳目标节点；高亮 → 跳本文件 `<=>` 所在源码行
+      this.interactiveRow(
         card,
         value,
         () => this.actions.openAndSelect(link.targetPath, link.targetNodeId as string),
+        () => this.actions.openSource(doc.filePath, link.sourceLineNo),
         !link.resolved,
       );
     }

@@ -17,4 +17,5 @@ export const DEFAULT_SETTINGS: Readonly<MmsSettings> = {
   exploreLevelGap: 100,
   panoramaNodeGap: 18,
   panoramaLevelGap: 48,
+  collapsedFolders: [],
 };

@@ -310,6 +310,7 @@ function resolveRefs(
         nodeMap.get(resolvedId)?.incomingRefs.push({
           sourcePath: filePath,
           sourceLine: pending.lineNo,
+          sourceNodeId: owner.id,
         });
       }
     }

@@ -2,7 +2,7 @@
 
 > Mind Map Show (MMS) - Obsidian 思维导图插件。文档版本：v1.2（2026-09-09）
 
-本文档列出插件版本1.1.0用到的Obsidian官方API与插件自身API。仅记录真实用到的，不写"未来可能用到的"。
+本文档列出插件版本1.2.0用到的Obsidian官方API与插件自身API。仅记录真实用到的，不写"未来可能用到的"。
 
 ---
 
@@ -156,8 +156,8 @@ declare module 'obsidian' {
 | `IMmsNode` | 节点：id / text / type / depth / lineNo / **content** / **annotation** / childIds / parentIds / crossRefs / nodeRefs / incomingRefs / embeds / sourceFilePath / isAutoFix |
 | `IWarning` | 解析警告 |
 | `IParsedDoc` | 一个 .mms 文件的解析结果（含 `layout`、`lineStyle`、`outgoingRefs`） |
-| `IBacklink` | 入链条目（`<=>` 指向本节点的来源，含本文件；右栏同文件来源显示为「本文件」，sourcePath / sourceLine） |
-| `IOutlink` | 出链条目（本文件 `<=>` 指向外部节点，文件级聚合） |
+| `IBacklink` | 入链条目（`<=>` 指向本节点的来源，含本文件；右栏同文件来源显示为「本文件」，sourcePath / sourceLine / sourceNodeId） |
+| `IOutlink` | 出链条目（本文件 `<=>` 指向外部节点，文件级聚合；含 sourceLineNo 供跳源码定位） |
 
 ### 3.2 宿主接口（注入，不直接 import obsidian）
 
@@ -207,8 +207,8 @@ interface IBuildEdgesOptions {
 
 | 类 | 用途 |
 |---|---|
-| `LeftPanel(container, opener, uiHost, onRefresh, onSelectTag, openDetailPanel)` | 左 sidebar 全部 UI：标签栏 / 搜索栏 / 文件树 / 调试信息 / 状态卡；`destroy()` 注销状态卡监听并移除 DOM |
-| `RightPanel(container, actions)` | 右栏节点详情：来源文件 / 当前节点 / 标签 / 引用链（选中节点的`<=>`跨边＋`::`定位合并展示，断链灰显）/ 入链（`<=>`指向该节点的来源，同文件显示为「本文件」）/ 出链（文件级，同文件引用不进此卡）/ 节点注释 / 嵌入资源，`actions` 提供 `openSource` 与 `openAndSelect` 跳转；`renderEmpty(hint?)` 支持降级提示 |
+| `LeftPanel(container, opener, uiHost, onRefresh, onSelectTag, openDetailPanel, getCollapsedFolders, persistCollapsedFolders)` | 左 sidebar 全部 UI：标签栏 / 搜索栏 / 文件树（折叠状态经 `getCollapsedFolders`／`persistCollapsedFolders` 读写 `settings.collapsedFolders`，箭头`▸`/`▾`指示，局部更新不重绘整树）/ 调试信息 / 状态卡；`destroy()` 注销状态卡监听并移除 DOM |
+| `RightPanel(container, actions)` | 右栏节点详情：来源文件 / 当前节点 / 标签 / 引用链（选中节点的`<=>`跨边＋`::`定位合并展示，断链灰显）/ 入链（`<=>`指向该节点的来源，同文件显示为「本文件」）/ 出链（文件级，同文件引用不进此卡）/ 节点注释 / 嵌入资源，`actions` 提供 `openSource` 与 `openAndSelect` 跳转；`renderEmpty(hint?)` 支持降级提示。三卡条目统一交互：单击高亮（互斥、再点取消、重渲染自动清除），「跳转」按钮两段式——未高亮跳节点（入链跳来源节点）、高亮后跳源码行（出链跳本文件`<=>`行） |
 | `StatusCard(container, uiHost, onRefresh, openDetailPanel)` | 左栏底部状态卡（刷新 / 查看详情 两个按钮，仅异常态显示文案）；`destroy()` 注销 `onStatus` 监听 |
 | `CanvasViewport` | 画布视口（鼠标 / 触控 + 缩放） |
 
@@ -216,7 +216,7 @@ interface IBuildEdgesOptions {
 
 | 操作 | 触发条件 | 响应 |
 |---|---|---|
-| 执行搜索 | 输入框非空 + 点「搜索」或回车 | 在当前标签分组内按文件名（忽略大小写）过滤，并展开全部文件夹 |
+| 执行搜索 | 输入框非空 + 点「搜索」或回车 | 在当前标签分组内按文件名（忽略大小写）过滤，临时忽略折叠状态（等效全部展开，不改写`collapsedFolders`持久化偏好） |
 | 空输入搜索 | 输入框为空 | 忽略本次操作，不刷新、不报错 |
 | 清空（有关键词） | `keyword` 非空 + 点「清空」或原生 × 按钮 | 清空输入框，撤销过滤，回退到当前标签分组的默认视图 |
 | 清空（无关键词） | `keyword` 为空 + 点「清空」或原生 × 按钮 | 只清输入框，不触发列表刷新 |
@@ -246,14 +246,16 @@ class MmsIndex {
 ```ts
 class MmsPlugin extends Plugin {
   settings: MmsSettings;
-  updateSettings(patch: Partial<MmsSettings>): void;  // 内存合并 → 防抖落盘与广播
-  onSettingsChange(fn: () => void): () => void;       // 订阅设置变更，返回注销函数
-  openDetailPanel(): Promise<void>;                   // 唤起 / 复用右侧详情面板
+  updateSettings(patch: Partial<MmsSettings>): void;      // 内存合并 → 防抖落盘与广播
+  updateSettingsSilently(patch: Partial<MmsSettings>): void; // 内存合并＋即时落盘，不广播、不触发重扫
+  onSettingsChange(fn: () => void): () => void;           // 订阅设置变更，返回注销函数
+  openDetailPanel(): Promise<void>;                       // 唤起 / 复用右侧详情面板
 }
 ```
 
 设置变更走 400ms 防抖：窗口结束后先 `saveData` 落盘，再广播给各视图按新值重绘，最后触发 `index.refresh()` 整库重扫。
-vault 事件（`.mms` 的 modify / rename / delete，含文件夹改名）走 500ms 防抖自动重扫。
+`updateSettingsSilently` 供折叠等纯偏好操作即时落盘用，跳过广播与重扫（左栏自行局部更新）。
+vault 事件（`.mms` 的 modify / rename / delete，含文件夹改名）走 500ms 防抖自动重扫；文件夹重命名／删除同步迁移／清理 `settings.collapsedFolders` 中的路径记录。
 视图在 `onOpen` 订阅、`onClose` 注销，避免 leaf 反复开闭累积回调。
 
 ---

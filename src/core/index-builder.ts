@@ -84,6 +84,7 @@ export function resolveCrossFileRefs(docs: readonly IParsedDoc[], warnings: IWar
         hit.incomingRefs.push({
           sourcePath: doc.filePath,
           sourceLine: ref.lineNo,
+          sourceNodeId: node.id,
         });
       }
     }
@@ -145,6 +146,7 @@ export function buildOutgoingRefs(docs: readonly IParsedDoc[]): void {
           targetLine,
           sourceNodeId: node.id,
           sourceText: node.text,
+          sourceLineNo: ref.lineNo,
           targetNodeId,
           resolved: ref.resolved,
         });

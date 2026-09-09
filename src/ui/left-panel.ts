@@ -40,8 +40,6 @@ export class LeftPanel {
   private warnBox: HTMLElement;
   private warnSection: HTMLElement;
   private statusCard: StatusCard;
-  /** 文件夹折叠状态，键是文件夹路径（「/」= 根），重启后默认全展开 */
-  private readonly collapsedFolders: Set<string> = new Set();
   /** 当前生效的搜索关键词，空串表示不过滤 */
   private keyword = '';
   /** 最近一次全量快照，供搜索 / 清空只重绘文件树，避免整栏重建 */
@@ -54,6 +52,10 @@ export class LeftPanel {
     onRefresh: () => void,
     private onSelectTag: (tag: string | null) => void,
     openDetailPanel: () => void,
+    /** 读持久化的折叠文件夹列表（settings.collapsedFolders） */
+    private getCollapsedFolders: () => string[],
+    /** 持久化折叠列表（静默写盘，不触发整栏重渲染） */
+    private persistCollapsedFolders: (folders: string[]) => void,
   ) {
     this.rootEl = el('div', { cls: 'mms-left-panel' });
     // ItemView.containerEl 是 .view-content（position: relative，无显式 height），
@@ -140,13 +142,13 @@ export class LeftPanel {
   /**
    * 执行搜索：只在当前标签分组内按文件名过滤。
    * 输入框为空时忽略本次操作——不刷新、不报错。
-   * 搜索意味着用户想看到全部匹配：同时展开所有文件夹，避免折叠目录吞掉结果
+   * 搜索态渲染时临时忽略折叠状态（等效全部展开，避免折叠目录吞掉结果），
+   * 但不改写持久化的折叠偏好：清空搜索后自动恢复
    */
   private applySearch(): void {
     const raw = this.searchInput.value.trim();
     if (!raw) return;
     this.keyword = raw;
-    this.collapsedFolders.clear();
     this.renderTreeOnly();
   }
 
@@ -222,25 +224,24 @@ export class LeftPanel {
       return a.localeCompare(b);
     });
 
+    // 搜索态临时忽略持久化的折叠状态（全部展开）；正常态照常应用
+    const collapsedList = this.keyword ? [] : this.getCollapsedFolders();
+
     for (const folder of folders) {
       const files = byFolder.get(folder)!;
-      const collapsed = this.collapsedFolders.has(folder);
+      const collapsed = collapsedList.includes(folder);
 
       const folderRow = el('div', { cls: 'mms-folder-row' });
-      folderRow.appendChild(
-        el('span', { cls: 'mms-folder-toggle', text: collapsed ? '▶' : '▼' }),
-      );
+      const toggle = el('span', { cls: 'mms-folder-toggle', text: collapsed ? '▸' : '▾' });
+      folderRow.appendChild(toggle);
       const display = folder === '/' ? '根目录' : folder;
       folderRow.appendChild(el('span', { cls: 'mms-folder-name', text: `${display}/` }));
-      folderRow.addEventListener('click', () => {
-        if (this.collapsedFolders.has(folder)) this.collapsedFolders.delete(folder);
-        else this.collapsedFolders.add(folder);
-        this.renderTree(snapshot);
+
+      // 子文件始终渲染进独立容器，折叠只是 toggle 容器的 is-collapsed，
+      // 展开时无需重建 DOM；点击后局部更新，不整树重绘，滚动位置保持
+      const childrenBox = el('div', {
+        cls: `mms-folder-children${collapsed ? ' is-collapsed' : ''}`,
       });
-      this.treeBox.appendChild(folderRow);
-
-      if (collapsed) continue;
-
       for (const file of files) {
         const item = el('div', {
           cls: `mms-file-item${file.path === snapshot.currentFilePath ? ' is-active' : ''}`,
@@ -250,9 +251,27 @@ export class LeftPanel {
         item.addEventListener('click', () => {
           void this.opener.openMindMap(file.path);
         });
-        this.treeBox.appendChild(item);
+        childrenBox.appendChild(item);
       }
+
+      folderRow.addEventListener('click', () => {
+        const nowCollapsed = !childrenBox.classList.contains('is-collapsed');
+        childrenBox.classList.toggle('is-collapsed', nowCollapsed);
+        toggle.textContent = nowCollapsed ? '▸' : '▾';
+        this.persistCollapsedFolders(this.withFolderToggled(folder, nowCollapsed));
+      });
+      this.treeBox.appendChild(folderRow);
+      this.treeBox.appendChild(childrenBox);
     }
+  }
+
+  /** 复制当前持久化数组并按目标态增删一个文件夹路径 */
+  private withFolderToggled(folder: string, collapsed: boolean): string[] {
+    const list = [...this.getCollapsedFolders()];
+    const idx = list.indexOf(folder);
+    if (collapsed && idx < 0) list.push(folder);
+    if (!collapsed && idx >= 0) list.splice(idx, 1);
+    return list;
   }
 
   /**

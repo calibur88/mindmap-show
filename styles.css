@@ -258,6 +258,11 @@
   font-size: 11px;
 }
 
+/* 文件夹子文件容器：折叠态整块隐藏（toggle 局部更新，不重绘整树） */
+.mms-folder-children.is-collapsed {
+  display: none;
+}
+
 /* ---------------------------------------------------------- 左栏：警告区 */
 
 .mms-warning-box {
@@ -398,6 +403,42 @@
   opacity: 0.7;
 }
 
+/* 可交互行（引用链 / 入链 / 出链）：单击高亮，与跳转按钮配合分两段跳转 */
+.mms-info-row--interactive {
+  align-items: center;
+  padding: 2px 4px;
+  border-radius: 4px;
+  cursor: pointer;
+  /* 消除移动端点击延迟，桌面/移动端行为一致 */
+  touch-action: manipulation;
+}
+
+.mms-info-row--interactive:hover {
+  background-color: var(--background-modifier-hover);
+}
+
+.mms-info-row--interactive.is-highlighted {
+  background-color: var(--background-modifier-hover);
+  box-shadow: inset 2px 0 0 var(--interactive-accent);
+}
+
+/* 交互行专用跳转按钮（区别于来源文件卡的 mms-mini-btn） */
+.mms-jump-btn {
+  flex: 0 0 auto;
+  padding: 1px 8px;
+  border: var(--mms-border);
+  border-radius: 4px;
+  background-color: var(--background-primary);
+  color: var(--text-normal);
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.mms-jump-btn:hover {
+  border-color: var(--interactive-accent);
+  color: var(--interactive-accent);
+}
+
 /* 右栏「标签」卡的标签chip容器，支持换行 */
 .mms-tag-row {
   display: flex;
@@ -438,6 +479,15 @@
   .mms-tag-item,
   .mms-file-item {
     min-height: 44px;
+  }
+
+  /* 右栏交互行与跳转按钮加大命中区 */
+  .mms-info-row--interactive {
+    min-height: 36px;
+  }
+
+  .mms-jump-btn {
+    min-height: 28px;
   }
 }
 
