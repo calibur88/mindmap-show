@@ -153,9 +153,9 @@ declare module 'obsidian' {
 | `IEmbed` | 嵌入条目 |
 | `ICrossRef` | 跨边引用（`<=>` 出边） |
 | `INodeRef` | 节点引用（`::` 点对点定位，不建边） |
-| `IMmsNode` | 节点：id / text / type / depth / lineNo / **content** / **annotation** / childIds / parentIds / crossRefs / nodeRefs / incomingRefs / embeds / sourceFilePath / isAutoFix |
-| `IWarning` | 解析警告 |
-| `IParsedDoc` | 一个 .mms 文件的解析结果（含 `layout`、`lineStyle`、`outgoingRefs`） |
+| `IMmsNode` | 节点：id / text / type / depth / lineNo / **content** / **annotation** / childIds / parentIds / crossRefs / nodeRefs / incomingRefs / embeds / sourceFilePath / isAutoFix / **extensions**（`!--`指令结果，可选） |
+| `IWarning` | 解析警告（`type` 含指令类：`directive-target-missing`／`directive-conflict`／`directive-unknown-key`，均 warning） |
+| `IParsedDoc` | 一个 .mms 文件的解析结果（含 `layout`、`lineStyle`、`outgoingRefs`、`extensions`——孤儿指令挂文档级、`directiveBindings`——成功绑定指令的行索引（`{key, lineNo, nodeId|null}`，供 UI 写回文档定位指令行），均可选） |
 | `IBacklink` | 入链条目（`<=>` 指向本节点的来源，含本文件；右栏同文件来源显示为「本文件」，sourcePath / sourceLine / sourceNodeId） |
 | `IOutlink` | 出链条目（本文件 `<=>` 指向外部节点，文件级聚合；含 sourceLineNo 供跳源码定位） |
 
@@ -268,9 +268,37 @@ import { splitFrontmatter } from 'src/core/frontmatter';
 import { buildOutgoingRefs, resolveCrossFileNodeRefs, resolveCrossFileRefs } from 'src/core/index-builder';
 import { layoutTree, measureTextWidth } from 'src/core/layout';
 import { makeNodeId, normalizeText, parseNodeRefTarget, parseRefTarget } from 'src/utils/make-key';
+import { parseDirectiveLine, parseDirectiveTarget, resolveDirectives, stripLineComment, normalizeDirectiveKey, KNOWN_DIRECTIVE_KEYS, BEHAVIOR_DIRECTIVE_KEYS } from 'src/core/parser/directive';
+import { resolveExtensions, KEY_RENDERERS, domNodeStyle, svgNodeStyle, edgeStyleOf, behaviorEnabled, pruneCollapsed, createDirectiveRuntime } from 'src/render/shared/extensions';
 ```
 
 这些函数都是纯函数，无副作用，可直接 import 测试。
+
+指令相关导出（`src/core/parser/directive.ts`）：
+
+| 导出 | 用途 |
+|---|---|
+| `DIRECTIVE_PREFIX`／`LINE_COMMENT_MARK`／`TARGET_SEP` | 语法常量：`!--`／`<**`／`<--` |
+| `KNOWN_DIRECTIVE_KEYS` | 标准 key 白名单（10 个，规范 §10.7 唯一权威来源）；清单外 key 在 body 主循环拦截，记`directive-unknown-key`不存储 |
+| `BEHAVIOR_DIRECTIVE_KEYS` | 行为类key清单（`collapsed`／`debug`／`locked`），不参与继承 |
+| `stripLineComment(text)` | 剥离行内首个`<**`到行尾，作用于标题行／指令行／正文行 |
+| `normalizeDirectiveKey(raw)` | key归一化：trim → 连续空格折叠为`-` → 小写 |
+| `parseDirectiveLine(line)` | 指令行解析：返回`{key, value, targetRaw}`，非指令行返回`null` |
+| `parseDirectiveTarget(raw)` | 目标段解析：`[#+] 文本` → `{hashCount, text}` |
+| `resolveDirectives(pending, nodes, nodeMap, declaredLevels, docExtensions, warn, bindings?)` | 第二遍回填：目标寻址（层级＋文本＋最近距离）＋冲突裁决（保留先写者）＋孤儿挂文档级；传入 `bindings` 数组时成功绑定的指令按序写入（行号＋归属节点 id），供 UI 写回文档定位指令行 |
+
+指令渲染导出（`src/render/shared/extensions.ts`）：
+
+| 导出 | 用途 |
+|---|---|
+| `KEY_RENDERERS` | 语义→画法映射表：每个白名单 key 的类别（样式/行为）、DOM CSS 属性、SVG 落点（shape/text/group）与值归一化器；`DirectiveKey` 联合类型由白名单推导，编译期保证覆盖完整 |
+| `resolveExtensions(node, nodeMap, base?)` | 有效扩展求值：样式类沿祖先链就近补齐（`base` 为文档级兜底），行为类不继承，不复制指令 |
+| `domNodeStyle(ext)` | DOM 探索视图：extensions → 节点元素 inline CSS 声明集（值经校验，非法不应用） |
+| `svgNodeStyle(ext)` | SVG 全景视图：extensions → rect／text／g 三类落点的属性集 |
+| `edgeStyleOf(ext)` | 连线样式覆盖：`line-color`→stroke、`line-width`→stroke-width；无覆盖返回`null` |
+| `behaviorEnabled(ext, key)` | 行为类判定：有效值为`'true'`时启用 |
+| `pruneCollapsed(rootId, nodeMap, collapsedIds)` | 折叠剪枝：折叠节点子孙不入布局（浅拷贝截断，不改原 map），返回隐藏后代计数 |
+| `createDirectiveRuntime(doc, overrides?)` | 渲染期运行时（双画法共用）：`extOf`／`collapsedIds`／`hiddenCounts`／`metaOf(node)`（聚合样式与行为标志，`foldable` 对 auto 补齐节点恒 false）／`edgeStyle(toId)`；`overrides` 为注入的折叠覆盖，优先于指令初始态（视图层不传——折叠徽标点击由 main.ts 直接写回文档 `collapsed` 指令行，持久化即文档） |
 
 ---
 

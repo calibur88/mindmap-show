@@ -3,9 +3,10 @@
  * @description 层级解析器。只接收剥离 Frontmatter 后的纯正文，完全不感知 Frontmatter
  */
 
-import type { ICrossRef, IMmsNode, INodeRef, IWarning } from '../../host/types';
+import type { IDirectiveBinding, ICrossRef, IMmsNode, INodeRef, IWarning } from '../../host/types';
 import { makeNodeId, normalizeText, parseNodeRefTarget, parseRefTarget, shortNodeName } from '../../utils/make-key';
 import { extractEmbeds, isExternalUrlLine } from './embed';
+import { DIRECTIVE_PREFIX, KNOWN_DIRECTIVE_KEYS, parseDirectiveLine, resolveDirectives, stripLineComment, type PendingDirective } from './directive';
 
 const HEADING_RE = /^(#{1,})\s+(.*)$/;
 const CHILD_RE = /^--\s+(.*)$/;
@@ -21,6 +22,10 @@ export interface BodyParseResult {
   nodes: IMmsNode[];
   nodeMap: Map<string, IMmsNode>;
   rootId: string | null;
+  /** 文档级指令（首个节点声明之前的孤儿指令的落点） */
+  extensions: Record<string, string>;
+  /** 成功绑定的指令行索引（按文档序），供 UI 写回文档定位指令行 */
+  directiveBindings: IDirectiveBinding[];
 }
 
 interface PendingRef {
@@ -53,6 +58,10 @@ export function parseBody(
   const order: string[] = [];
   const pendingRefs: PendingRef[] = [];
   const pendingNodeRefs: PendingNodeRef[] = [];
+  const pendingDirectives: PendingDirective[] = [];
+  const docExtensions: Record<string, string> = {};
+  /** heading 行号 → 声明 `#` 个数：指令寻址的层级匹配依据（缺根降级不改变声明层级） */
+  const declaredLevels = new Map<number, number>();
   /** pathStack[d] 保存当前路径上 depth 为 d 的节点 */
   const pathStack: IMmsNode[] = [];
 
@@ -108,6 +117,7 @@ export function parseBody(
       embeds: [],
       sourceFilePath: filePath,
       isAutoFix: false,
+      extensions: {},
     };
     attach(parent, node);
     nodeMap.set(id, node);
@@ -124,7 +134,8 @@ export function parseBody(
     const heading = HEADING_RE.exec(line);
     if (heading) {
       const rawDepth = heading[1].length - 1;
-      const text = heading[2].trim();
+      declaredLevels.set(lineNo, heading[1].length);
+      const text = stripLineComment(heading[2]).trim();
       let depth = rawDepth;
 
       if (pathStack.length === 0) {
@@ -161,9 +172,10 @@ export function parseBody(
 
     const child = CHILD_RE.exec(line);
     if (child) {
+      const childText = stripLineComment(child[1]).trim();
       let parent: IMmsNode | null = lastHeading;
       if (!parent) {
-        warn('missing-parent', 'warning', `-- 节点 "${child[1].trim()}" 之前没有标题，已挂到自动根节点`, lineNo, true);
+        warn('missing-parent', 'warning', `-- 节点 "${childText}" 之前没有标题，已挂到自动根节点`, lineNo, true);
         parent = createNode(null, docName, 'auto', 0, lineNo);
         parent.isAutoFix = true;
         pathStack.length = 0;
@@ -171,7 +183,7 @@ export function parseBody(
         lastHeading = parent;
         if (rootId === null) rootId = parent.id;
       }
-      const node = createNode(parent, child[1].trim(), 'child', parent.depth + 1, lineNo);
+      const node = createNode(parent, childText, 'child', parent.depth + 1, lineNo);
       current = node;
       continue;
     }
@@ -202,6 +214,32 @@ export function parseBody(
       continue;
     }
 
+    // `!--` 指令行：分流优先级低于上方全部行首前缀（# / -- / <=> / ::）。
+    // 必须先于 `![[` 的 includes 判定——指令行内的 ![[ 属于 value / 目标文本，不入 embeds
+    if (line.trim().startsWith(DIRECTIVE_PREFIX)) {
+      const parsed = parseDirectiveLine(line);
+      if (parsed) {
+        // 白名单拦截：仅支持已实现渲染的标准 key（§10.7），清单外记警告且不存储
+        if (!KNOWN_DIRECTIVE_KEYS.includes(parsed.key)) {
+          warn(
+            'directive-unknown-key',
+            'warning',
+            `未知指令 key "${parsed.key}"，仅支持规范 §10.7 清单内 key，指令已忽略`,
+            lineNo,
+            false,
+          );
+          continue;
+        }
+        pendingDirectives.push({
+          lineNo,
+          ...parsed,
+          // 默认绑定落点：上方最近的节点声明行；null = 孤儿（挂文档级）
+          boundOwnerId: current ? current.id : null,
+        });
+      }
+      continue;
+    }
+
     if (line.includes('![[')) {
       if (current) current.embeds.push(...extractEmbeds(line, lineNo));
       continue;
@@ -222,16 +260,24 @@ export function parseBody(
       continue;
     }
 
-    if (current) current.content.push(line.trim());
+    const contentText = stripLineComment(line).trim();
+    if (contentText && current) current.content.push(contentText);
   }
 
   resolveRefs(pendingRefs, nodeMap, filePath, warn);
   resolveNodeRefs(pendingNodeRefs, nodeMap, filePath);
+  const orderedNodes = order.map((id) => nodeMap.get(id) as IMmsNode);
+  const directiveBindings: IDirectiveBinding[] = [];
+  resolveDirectives(pendingDirectives, orderedNodes, nodeMap, declaredLevels, docExtensions, (type, severity, message, lineNo, autoFixed = false) => {
+    warnings.push({ type, severity, message, filePath, lineNo, autoFixed });
+  }, directiveBindings);
 
   return {
-    nodes: order.map((id) => nodeMap.get(id) as IMmsNode),
+    nodes: orderedNodes,
     nodeMap,
     rootId,
+    extensions: docExtensions,
+    directiveBindings,
   };
 }
 

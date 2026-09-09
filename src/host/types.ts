@@ -100,6 +100,11 @@ export interface IMmsNode {
   sourceFilePath: string;
   /** true 表示为补齐层级而自动生成的空节点 */
   isAutoFix: boolean;
+  /**
+   * `!--` 指令绑定的扩展键值（默认绑定与 `<--` 目标绑定的落点）。
+   * key 已归一化（trim → 连续空白折叠为 `-` → 小写）；渲染期沿祖先链就近继承，行为类除外
+   */
+  extensions?: Record<string, string>;
 }
 
 // ---------------------------------------------------------------------- 警告
@@ -110,7 +115,10 @@ export type WarningType =
   | 'duplicate-merge'
   | 'no-root'
   | 'level-skip'
-  | 'parse-error';
+  | 'parse-error'
+  | 'directive-target-missing'
+  | 'directive-conflict'
+  | 'directive-unknown-key';
 
 export interface IWarning {
   type: WarningType;
@@ -122,6 +130,16 @@ export interface IWarning {
 }
 
 // ---------------------------------------------------------------------- 文档
+
+/** 一条成功绑定的指令记录：UI 写回文档（如折叠徽标删除 / 改写指令行）的定位依据 */
+export interface IDirectiveBinding {
+  /** 归一化后的 key */
+  key: string;
+  /** 指令行号（1 起） */
+  lineNo: number;
+  /** 绑定到的节点 id；null = 孤儿指令（挂文档级） */
+  nodeId: string | null;
+}
 
 /** 一个 `.mms` 文件的解析结果 */
 export interface IParsedDoc {
@@ -137,6 +155,10 @@ export interface IParsedDoc {
   nodeMap: Map<string, IMmsNode>;
   rootId: string | null;
   warnings: IWarning[];
+  /** 文档级 `!--` 指令（首个节点声明之前的孤儿指令的落点） */
+  extensions?: Record<string, string>;
+  /** 成功绑定的指令行索引（按文档序），供 UI 写回文档时定位指令行 */
+  directiveBindings?: ReadonlyArray<IDirectiveBinding>;
   /** 本文件指向外部文件的 `<=>` 出链，由索引构建器聚合（不含同文件引用） */
   outgoingRefs: IOutlink[];
 }

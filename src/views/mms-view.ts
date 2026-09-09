@@ -29,6 +29,8 @@ export interface IMmsViewDeps {
   ensureDetailLeaf: () => void;
   /** 订阅设置变更，返回注销函数 */
   onSettingsChange: (fn: () => void) => () => void;
+  /** 折叠徽标点击的写回入口：在文档中插入 / 改写 / 删除 collapsed 指令行（持久化即文档） */
+  setNodeCollapsed: (filePath: string, nodeId: string, collapsed: boolean) => void;
 }
 
 export class MmsView extends FileView {
@@ -179,6 +181,13 @@ export class MmsView extends FileView {
     body.empty();
 
     const settings = this.deps.getSettings();
+    const filePath = this.currentPath;
+    const directiveOptions = {
+      onToggleCollapse: (nodeId: string, currently: boolean): void => {
+        // 折叠状态机持久化即文档：写回 collapsed 指令行，modify 事件触发防抖重扫后画布按新文档重渲染
+        if (filePath) this.deps.setNodeCollapsed(filePath, nodeId, !currently);
+      },
+    };
     const fragment =
       this.viewMode === 'panorama'
         ? renderPanorama(doc, {
@@ -188,6 +197,7 @@ export class MmsView extends FileView {
             nodeGap: settings.panoramaNodeGap,
             levelGap: settings.panoramaLevelGap,
             onNodeClick: (nodeId) => this.selectNode(nodeId),
+            ...directiveOptions,
           })
         : renderExplore(doc, {
             lineWidth: settings.exploreLineWidth,
@@ -196,6 +206,7 @@ export class MmsView extends FileView {
             nodeGap: settings.exploreNodeGap,
             levelGap: settings.exploreLevelGap,
             onNodeClick: (nodeId) => this.selectNode(nodeId),
+            ...directiveOptions,
           });
 
     if (seq !== this.switchSeq) return;

@@ -11,6 +11,7 @@ import { describe, expect, it } from 'vitest';
 import { parseMms } from '../../../src/core/parser';
 import { layoutTree } from '../../../src/core/layout';
 import { buildOutgoingRefs, resolveCrossFileRefs } from '../../../src/core/index-builder';
+import { createDirectiveRuntime, resolveExtensions } from '../../../src/render/shared/extensions';
 import type { IWarning, MmsLayout, MmsLineStyle } from '../../../src/host/types';
 
 const readDemo = (name: string): string =>
@@ -199,6 +200,112 @@ describe('边界与异常/空文件.mms', () => {
     const doc = parseDemo('边界与异常/空文件.mms');
     expect(doc.nodes).toHaveLength(0);
     expect(doc.rootId).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------- 指令扩展
+
+describe('指令扩展/指令基础.mms', () => {
+  const doc = parseDemo('指令扩展/指令基础.mms');
+
+  it('孤儿指令挂文档级，带空格的 key 归一化为 - 连接', () => {
+    expect(doc.extensions).toEqual({ background: '#FDF6E3', 'text-color': '#2C3E50' });
+  });
+
+  it('默认绑定：穿插注释行不打断绑定，行尾注释整段剥离', () => {
+    const root = doc.nodeMap.get('产品路线图')!;
+    expect(root.extensions).toEqual({ color: '#C0392B' });
+    expect(root.annotation.join(' ')).toContain('指令块穿插注释行、空行均不打断绑定');
+    expect(doc.nodeMap.get('产品路线图>稳定性')?.extensions).toEqual({ 'line-color': '#95A5F6' });
+  });
+
+  it('同 key 冲突保留先写者并记 directive-conflict', () => {
+    expect(doc.warnings.find((w) => w.type === 'directive-conflict')?.lineNo).toBe(16);
+  });
+
+  it('目标绑定支持前向引用', () => {
+    expect(doc.nodeMap.get('产品路线图>稳定性>性能基线')?.extensions).toEqual({ color: '#E67E22' });
+  });
+
+  it('渲染期继承：子节点沿祖先链就近补齐样式，文档级兜底', () => {
+    const node = doc.nodeMap.get('产品路线图>稳定性>事故复盘')!;
+    expect(node.extensions).toEqual({});
+    expect(resolveExtensions(node, doc.nodeMap, doc.extensions)).toEqual({
+      'line-color': '#95A5F6',
+      color: '#C0392B',
+      background: '#FDF6E3',
+      'text-color': '#2C3E50',
+    });
+  });
+
+  it('每个节点都带 ** 备注（说明效果与颜色中文名）', () => {
+    for (const node of doc.nodes) {
+      expect(node.annotation.length).toBeGreaterThan(0);
+    }
+  });
+});
+
+describe('指令扩展/指令进阶.mms', () => {
+  const doc = parseDemo('指令扩展/指令进阶.mms');
+  const R = '指令效果全景';
+
+  it('样式类 7 个 key 默认绑定到紧邻声明行', () => {
+    expect(doc.nodeMap.get(`${R}>color 文字色`)?.extensions).toEqual({ color: '#E74C3C' });
+    expect(doc.nodeMap.get(`${R}>text-color 文字色`)?.extensions).toEqual({ 'text-color': '#8E44AD' });
+    expect(doc.nodeMap.get(`${R}>background 背景色`)?.extensions).toEqual({ background: '#F1C40F' });
+    expect(doc.nodeMap.get(`${R}>border-radius 圆角`)?.extensions).toEqual({ 'border-radius': '16' });
+    expect(doc.nodeMap.get(`${R}>opacity 透明度`)?.extensions).toEqual({ opacity: '0.4' });
+    expect(doc.nodeMap.get(`${R}>line-color 连线色`)?.extensions).toEqual({ 'line-color': '#3498DB' });
+    expect(doc.nodeMap.get(`${R}>line-width 连线粗细`)?.extensions).toEqual({ 'line-width': '3' });
+  });
+
+  it('行为类 3 个 key：空 value 归 true', () => {
+    expect(doc.nodeMap.get(`${R}>collapsed 初始折叠`)?.extensions).toEqual({ collapsed: 'true' });
+    expect(doc.nodeMap.get(`${R}>debug 调试叠加`)?.extensions).toEqual({ debug: 'true' });
+    expect(doc.nodeMap.get(`${R}>locked 锁定`)?.extensions).toEqual({ locked: 'true' });
+  });
+
+  it('样式类沿祖先链继承：每个样式分支的子节点补齐父级 key', () => {
+    const eff = (id: string) => resolveExtensions(doc.nodeMap.get(id)!, doc.nodeMap);
+    expect(eff(`${R}>color 文字色>红字的子节点`)).toEqual({ color: '#E74C3C' });
+    expect(eff(`${R}>text-color 文字色>紫字的子节点`)).toEqual({ 'text-color': '#8E44AD' });
+    expect(eff(`${R}>background 背景色>黄底的子节点`)).toEqual({ background: '#F1C40F' });
+    expect(eff(`${R}>border-radius 圆角>更圆的子节点`)).toEqual({ 'border-radius': '16' });
+    expect(eff(`${R}>opacity 透明度>半透明的子节点`)).toEqual({ opacity: '0.4' });
+    expect(eff(`${R}>line-color 连线色>蓝线子节点`)).toEqual({ 'line-color': '#3498DB' });
+    expect(eff(`${R}>line-width 连线粗细>粗线子节点`)).toEqual({ 'line-width': '3' });
+  });
+
+  it('行为类不继承：collapsed / debug / locked 的子节点为空', () => {
+    expect(doc.nodeMap.get(`${R}>collapsed 初始折叠>折叠期间不可见 A`)?.extensions).toEqual({});
+    expect(doc.nodeMap.get(`${R}>debug 调试叠加>无叠加的子节点`)?.extensions).toEqual({});
+    expect(doc.nodeMap.get(`${R}>locked 锁定>未锁的子节点`)?.extensions).toEqual({});
+    expect(resolveExtensions(doc.nodeMap.get(`${R}>locked 锁定>未锁的子节点`)!, doc.nodeMap)).toEqual({});
+  });
+
+  it('渲染运行时：折叠隐藏计数、调试与锁定标志、连线样式覆盖', () => {
+    const rt = createDirectiveRuntime(doc);
+    expect(rt.collapsedIds.has(`${R}>collapsed 初始折叠`)).toBe(true);
+    expect(rt.metaOf(doc.nodeMap.get(`${R}>collapsed 初始折叠`)!).hiddenCount).toBe(2);
+    expect(rt.metaOf(doc.nodeMap.get(`${R}>debug 调试叠加`)!).debug).toBe(true);
+    expect(rt.metaOf(doc.nodeMap.get(`${R}>locked 锁定`)!).locked).toBe(true);
+    expect(rt.edgeStyle(`${R}>line-color 连线色`)).toEqual({ stroke: '#3498DB' });
+    expect(rt.edgeStyle(`${R}>line-width 连线粗细`)).toEqual({ strokeWidth: 3 });
+  });
+
+  it('折叠徽标的写回定位：collapsed 分支有指令行记录（展开即删该行）', () => {
+    const collapsedId = `${R}>collapsed 初始折叠`;
+    const bound = doc.directiveBindings?.find((b) => b.nodeId === collapsedId && b.key === 'collapsed');
+    expect(bound).toBeDefined();
+    // 指令行紧随声明行之后（默认绑定）
+    const declared = doc.nodeMap.get(collapsedId)!.lineNo;
+    expect(bound!.lineNo).toBe(declared + 1);
+  });
+
+  it('每个节点都带 ** 备注（说明效果与颜色中文名）', () => {
+    for (const node of doc.nodes) {
+      expect(node.annotation.length).toBeGreaterThan(0);
+    }
   });
 });
 

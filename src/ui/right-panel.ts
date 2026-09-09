@@ -6,6 +6,7 @@
 import type { IBacklink, IOutlink, IParsedDoc } from '../host/types';
 import { el } from '../utils/dom';
 import { ID_SEP, shortNodeName } from '../utils/make-key';
+import { behaviorEnabled, resolveExtensions } from '../render/shared/extensions';
 
 /** 右栏渲染数据 */
 export interface IRightPanelData {
@@ -65,10 +66,10 @@ export class RightPanel {
     return card;
   }
 
-  private row(parent: HTMLElement, key: string, value: string): void {
+  private row(parent: HTMLElement, key: string, value: string, muted = false): void {
     const row = el('div', { cls: 'mms-info-row' });
     row.appendChild(el('span', { cls: 'mms-info-key', text: key }));
-    row.appendChild(el('span', { cls: 'mms-info-val', text: value }));
+    row.appendChild(el('span', { cls: `mms-info-val${muted ? ' is-locked' : ''}`, text: value }));
     parent.appendChild(row);
   }
 
@@ -178,12 +179,15 @@ export class RightPanel {
       card.appendChild(el('div', { cls: 'mms-empty-hint', text: '节点已失效' }));
       return;
     }
-    this.row(card, '节点名称', node.text || '（空）');
+    // 指令 locked：节点名置灰 + 锁定状态行（画布暂无拖拽/编辑交互，右栏承担锁定指示）
+    const locked = behaviorEnabled(resolveExtensions(node, doc.nodeMap, doc.extensions), 'locked');
+    this.row(card, '节点名称', node.text || '（空）', locked);
     this.row(card, '节点类型', node.isAutoFix ? '自动补齐' : node.type === 'heading' ? '标题 (#)' : '子节点 (--)');
     this.row(card, '层级深度', String(node.depth));
     this.row(card, '所属分支', node.id.split(ID_SEP).slice(0, -1).join(' → ') || '（根）');
     this.row(card, '行号', `第 ${node.lineNo} 行`);
     this.row(card, '内容', node.content.join(' / ') || '（无）');
+    if (locked) this.row(card, '锁定状态', '已锁定（locked 指令）');
   }
 
   private renderTags(doc: IParsedDoc): void {

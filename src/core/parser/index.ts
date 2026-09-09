@@ -20,7 +20,13 @@ export function parseMms(content: string, filePath: string): IParsedDoc {
   const { frontmatter, body, bodyStartLine } = splitFrontmatter(content);
   const displayName = deriveDisplayName(filePath, frontmatter?.mms_name);
 
-  const { nodes, nodeMap, rootId } = parseBody(body, filePath, bodyStartLine, displayName, warnings);
+  const { nodes, nodeMap, rootId, extensions, directiveBindings } = parseBody(
+    body,
+    filePath,
+    bodyStartLine,
+    displayName,
+    warnings,
+  );
 
   if (nodeMap.size === 0) {
     warnings.push({
@@ -43,6 +49,8 @@ export function parseMms(content: string, filePath: string): IParsedDoc {
     nodeMap,
     rootId,
     warnings,
+    extensions,
+    directiveBindings,
     outgoingRefs: [],
   };
 }

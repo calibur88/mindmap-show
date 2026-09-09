@@ -523,7 +523,9 @@
   border-radius: 6px;
   background-color: var(--background-primary);
   text-align: center;
-  overflow: hidden;
+  /* visible：折叠徽标与调试叠加层（指令渲染层）需探出节点边缘；
+     内容溢出由 .mms-node-content 的 line-clamp 与 .mms-badge 的 ellipsis 自行约束 */
+  overflow: visible;
   transition: box-shadow 0.12s ease;
 }
 
@@ -638,6 +640,96 @@
 .mms-svg-empty {
   fill: var(--text-faint);
   font-size: 13px;
+}
+
+/* ------------------------------------------------- 指令扩展（!-- 渲染层） */
+
+/* 折叠徽标（探索视图）：锚在节点与子层相连的边中点，方向由修饰类决定 */
+.mms-fold-btn {
+  position: absolute;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 50%;
+  background-color: var(--background-primary);
+  color: var(--text-muted);
+  font-size: 11px;
+  line-height: 1;
+  cursor: pointer;
+  box-shadow: none;
+}
+
+.mms-fold-btn:hover {
+  border-color: var(--interactive-accent);
+  color: var(--interactive-accent);
+}
+
+.mms-fold-btn--lr { right: 0; top: 50%; transform: translate(50%, -50%); }
+.mms-fold-btn--rl { left: 0; top: 50%; transform: translate(-50%, -50%); }
+.mms-fold-btn--tb { bottom: 0; left: 50%; transform: translate(-50%, 50%); }
+.mms-fold-btn--bt { top: 0; left: 50%; transform: translate(-50%, -50%); }
+
+.mms-fold-btn.is-collapsed {
+  border-color: var(--interactive-accent);
+  color: var(--interactive-accent);
+}
+
+/* 折叠徽标（全景视图）：与探索视图同语义，圆点浮在连线锚点上 */
+.mms-svg-fold circle {
+  fill: var(--background-primary);
+  stroke: var(--background-modifier-border);
+  stroke-width: 1;
+  cursor: pointer;
+}
+
+.mms-svg-fold:hover circle {
+  stroke: var(--interactive-accent);
+}
+
+.mms-svg-fold-text {
+  fill: var(--text-muted);
+  font-size: 10px;
+  pointer-events: none;
+}
+
+.mms-svg-fold:hover .mms-svg-fold-text {
+  fill: var(--interactive-accent);
+}
+
+.mms-svg-fold.is-collapsed circle {
+  stroke: var(--interactive-accent);
+}
+
+.mms-svg-fold.is-collapsed .mms-svg-fold-text {
+  fill: var(--interactive-accent);
+}
+
+/* 调试叠加层：节点 id 与源码行号（指令 debug） */
+.mms-debug-chip {
+  position: absolute;
+  top: -9px;
+  left: 4px;
+  padding: 0 4px;
+  border-radius: 3px;
+  background-color: var(--background-modifier-accent);
+  color: var(--text-muted);
+  font-family: var(--font-monospace);
+  font-size: 9px;
+  line-height: 14px;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.mms-svg-debug {
+  fill: var(--text-muted);
+  font-family: var(--font-monospace);
+  font-size: 9px;
+}
+
+/* 右栏锁定置灰（指令 locked：节点名等编辑入口置灰的右栏体现） */
+.mms-info-val.is-locked {
+  color: var(--text-faint);
 }
 
 /* ------------------------------------------------------------ 通用小件 */

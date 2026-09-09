@@ -103,6 +103,12 @@ export interface IBuildEdgesOptions extends IEdgeGeometry {
   treeLineWidth: number;
   /** 跨文件引用虚线线宽（像素） */
   crossLineWidth: number;
+  /**
+   * 树边样式覆盖（`!--` 指令的 line-color / line-width）：
+   * 返回 null 或缺省字段走默认画法。仅对 kind='tree' 的边调用，
+   * 跨边（`<=>` 引用虚线）不参与指令样式
+   */
+  edgeStyle?: (edge: ILayoutEdge) => { stroke?: string; strokeWidth?: number } | null;
 }
 
 /**
@@ -132,6 +138,10 @@ export function buildEdgesSvg(layout: ILayoutResult, options: IBuildEdgesOptions
       'stroke-opacity': isCross ? 0.85 : 0.9,
     };
     if (isCross) attr['stroke-dasharray'] = '6 4';
+    // 指令覆盖仅作用于树边（子节点 to 端的有效 extensions，见 edgeStyleOf）
+    const override = isCross ? null : options.edgeStyle?.(edge);
+    if (override?.stroke !== undefined) attr.stroke = override.stroke;
+    if (override?.strokeWidth !== undefined) attr['stroke-width'] = override.strokeWidth;
     const path = svgEl('path', attr);
     if (edge.label) {
       path.appendChild(svgEl('title')).textContent = edge.label;

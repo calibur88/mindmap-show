@@ -1,9 +1,47 @@
 # 更新日志
 
-> 文档版本：v1.2（2026-09-09）· 插件版本：1.2.0 · 编写规范见[CONTRIBUTING.md](CONTRIBUTING.md)§6
+> 文档版本：v1.3（2026-09-09）· 插件版本：1.5.0 · 编写规范见[CONTRIBUTING.md](CONTRIBUTING.md)§6
 > 版本按迭代顺序倒序排列，每个版本条目固定分为「插件更新」与「.mms语法更新」两类。
 
-## [1.2.0] - 2026-09-09（当前）
+## [1.5.0] - 2026-09-09（当前）
+
+> MINOR版本：`.mms`语法v1.3——新增`!--`节点级指令（默认绑定／目标寻址／冲突裁决／白名单拦截／渲染落地）。纯新增语法，无存量兼容负担。
+
+### 插件更新
+
+**`!--`指令解析（两遍扫描）**：新增`src/core/parser/directive.ts`，body主循环只加分流不改既有路径
+- 行格式`!-- [key] > [value] <-- [目标] <** 行尾注释`；分流优先级低于`#`／`--`／`<=>`／`::`／`![[`／`**`
+- 行尾注释`<**`到行尾整段剥离（含其后的`<--`），同时作用于标题行、`--`行、指令行与正文行
+- key归一化：trim → 连续空格折叠为`-` → 小写（`line color`→`line-color`）
+- **白名单拦截**：仅支持规范§10.7清单内10个key，清单外key记`directive-unknown-key` warning且不存储（不开放自定义扩展）
+- 默认绑定上方最近节点声明行，指令块穿插`**`／空行／`<=>`／`![[`不打断绑定；首个节点声明前的孤儿指令挂文档级`document.extensions`
+- `<--`目标寻址：`#`个数＝声明层级（`--`子节点按depth+1同级参与匹配）＋文本精确匹配＋最近距离（同距取上方），支持前向引用
+- 冲突保留先写者并记`directive-conflict`；目标寻址失败记`directive-target-missing`（均warning，不影响解析与退出码）
+
+**渲染落地（语义→画法映射）**：新增`src/render/shared/extensions.ts`（`KEY_RENDERERS`映射表＋`createDirectiveRuntime`运行时），DOM探索视图与SVG全景视图共用
+- 7个样式key双画法映射（两视图视觉一致）：`color`／`text-color`→均落文字色（DOM`color`／SVG文本`fill`）、`line-color`／`line-width`→连线`stroke`／`stroke-width`（两画法连线均为SVG path）、`border-radius`→`border-radius`／`rx`、`background`→`background-color`／矩形`fill`、`opacity`→`opacity`／`opacity`（SVG落节点整组）
+- 值校验防注入：颜色（hex／rgb()／hsl()／命名色）、数字（`opacity`收敛到[0,1]、`line-width`＞0）经归一化器校验，非法值不应用、静默忽略
+- 同落点冲突按清单声明顺序后者覆盖（`text-color`与`color`两画法同落文字色，`text-color`后声明胜出；`background`独占矩形填充）
+- 渲染期继承：子节点沿祖先链就近补齐样式类key（文档级extensions兜底），不复制指令；树边取子节点端有效extensions，父级`line-color`可styling整条分支连线
+- 3个行为key接交互层，与画法无关、不参与继承：`collapsed`渲染折叠徽标「+N」（基于`pruneCollapsed`剪枝；点击展开/收起直接写回文档`collapsed`指令行——插入到声明行后／改写显式`> false`／删除绑定行，持久化即文档不进设置文件，auto补齐节点无真实声明行不提供折叠；写回走串行队列逐次执行且每次读最新文本现场重解析定位行号，防连点并发覆盖与前次写回导致的行号漂移）、`debug`画布叠加节点id调试层、`locked`禁拖拽＋右栏置灰提示
+
+**数据模型**：`IMmsNode`／`IParsedDoc`新增可选字段`extensions: Record<string, string>`；`IParsedDoc`新增`directiveBindings`（成功绑定指令的行索引，UI写回文档的定位依据）；`WarningType`新增`directive-target-missing`／`directive-conflict`／`directive-unknown-key`
+
+**示例库**：新增`指令扩展/`目录（`指令基础.mms`：绑定与解析机制；`指令进阶.mms`：全部10个key效果全景，逐节点`**`备注效果说明与颜色中文名），`test-vault-local`同步
+
+### .mms语法更新
+
+**`!--`节点级指令**：语法版本v1 → v1.3，规范收录为§10（§10.0符号体系 ～ §10.10实现边界）
+- 标准key清单（§10.7，唯一权威来源）：样式类`color`／`text-color`／`line-color`／`line-width`／`border-radius`／`background`／`opacity`＋行为类`collapsed`／`debug`／`locked`；总原则「key只声明语义，渲染器负责语义到画法（DOM/SVG）的实现」，`KNOWN_DIRECTIVE_KEYS`与`KEY_RENDERERS`同置一处、同PR维护
+- `transform`／`shadow`／`transition`／`line-dash`／`font`等因双画法落地成本或语义不对等未纳入清单，写了即按未知key告警
+- `<!--`预留给未来块注释；`<=>`／`::`／`![[`／`**`既有识别逻辑零改动，指令行内`![[`不入embeds
+- 对已有用户的影响：**兼容**（纯新增语法；不写指令的文件解析结果与1.2.0完全一致）
+- 测试：新增`test/core/parser/directive.test.ts`（47例）与`test/render/shared/extensions.test.ts`（37例），demo套件35 → 48例，全套96 → 192例通过，`tsc --noEmit`零错误
+- **版本兼容声明**：1.5.0与1.0.0完全兼容，既有`.mms`文件无需任何迁移
+
+---
+
+## [1.2.0] - 2026-09-09
 
 > MINOR版本：左栏文件夹折叠状态持久化 + 右栏三卡交互（单击高亮、两段式跳转）。
 

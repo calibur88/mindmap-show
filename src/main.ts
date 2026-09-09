@@ -6,6 +6,7 @@
 import { Plugin, TFile, TFolder } from 'obsidian';
 import { MmsIndex } from './controller/refresh';
 import { MmsSelection } from './controller/selection';
+import { parseMms } from './core/parser';
 import { ObsidianOpener } from './host/obsidian/opener';
 import { ObsidianUiHost } from './host/obsidian/ui-host';
 import { ObsidianVaultHost } from './host/obsidian/vault';
@@ -55,6 +56,8 @@ export default class MmsPlugin extends Plugin {
           getSettings: () => this.settings,
           ensureDetailLeaf: () => this.ensureDetailLeaf(),
           onSettingsChange: (fn) => this.onSettingsChange(fn),
+          setNodeCollapsed: (filePath, nodeId, collapsed) =>
+            void this.writeCollapseDirective(filePath, nodeId, collapsed),
         }),
     );
     this.registerView(
@@ -241,6 +244,56 @@ export default class MmsPlugin extends Plugin {
   private async loadSettings(): Promise<void> {
     const data = (await this.loadData()) as Partial<MmsSettings> | null;
     this.settings = { ...DEFAULT_SETTINGS, ...data };
+  }
+
+  /** 折叠写回串行队列：队尾指针，前一个任务完成（或失败）后一个才开始，防连点并发覆盖 */
+  private collapseWriteTail: Promise<void> = Promise.resolve();
+
+  /**
+   * 折叠徽标点击的写回：在 .mms 文档中插入 / 改写 / 删除 collapsed 指令行。
+   * 持久化即文档本身（不进设置文件）；写回后 modify 事件触发防抖重扫，画布按新文档重渲染。
+   * 每个任务在执行时读最新文本并现场重解析定位行号：前一次写回会使行号整体漂移，
+   * 而全局索引重扫有 500ms 防抖窗口，依赖旧 directiveBindings 会写错行
+   */
+  private writeCollapseDirective(filePath: string, nodeId: string, collapsed: boolean): Promise<void> {
+    const task = async (): Promise<void> => {
+      const file = this.app.vault.getAbstractFileByPath(filePath);
+      if (!(file instanceof TFile)) return;
+
+      const text = await this.app.vault.read(file);
+      const doc = parseMms(text, filePath);
+      const node = doc.nodeMap.get(nodeId);
+      if (!node || node.isAutoFix) return;
+
+      const eol = text.includes('\r\n') ? '\r\n' : '\n';
+      const lines = text.split(/\r?\n/);
+      // 该节点已有的 collapsed 指令行（含显式 `> false`），无则 null
+      const bound = doc.directiveBindings?.find((b) => b.nodeId === nodeId && b.key === 'collapsed') ?? null;
+
+      if (collapsed) {
+        // 折叠：已有指令行改写为 true（覆盖显式 false），否则插入到声明行之后（默认绑定到该节点）
+        const indent = /^[\t ]*/.exec(lines[node.lineNo - 1] ?? '')?.[0] ?? '';
+        if (bound) lines[bound.lineNo - 1] = `${indent}!-- collapsed`;
+        else lines.splice(node.lineNo, 0, `${indent}!-- collapsed`);
+      } else {
+        // 展开：删除绑定的指令行；无指令行属异常态，防御返回
+        if (!bound) return;
+        lines.splice(bound.lineNo - 1, 1);
+      }
+
+      await this.app.vault.modify(file, lines.join(eol));
+    };
+
+    const run = async (): Promise<void> => {
+      try {
+        await task();
+      } catch (err) {
+        // 单次失败只记日志，不断链：后续点击仍可继续排队写回
+        console.error('[MMS] collapsed 指令写回失败', err);
+      }
+    };
+    this.collapseWriteTail = this.collapseWriteTail.then(run, run);
+    return this.collapseWriteTail;
   }
 
   private async openSidePanel(): Promise<void> {

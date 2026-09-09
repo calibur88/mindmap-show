@@ -1,7 +1,7 @@
 # 项目整体架构
 
-> 本文是Mind Map Show（MMS）工程的权威架构说明。文档版本：v1.2（2026-09-09）
-> 插件版本：1.2.0 · 语法版本：`.mms` v1 · 最低依赖：Obsidian1.4.0 · 语言：TypeScript5.7（严格模式）
+> 本文是Mind Map Show（MMS）工程的权威架构说明。文档版本：v1.3（2026-09-09）
+> 插件版本：1.5.0 · 语法版本：`.mms` v1.3 · 最低依赖：Obsidian1.4.0 · 语言：TypeScript5.7（严格模式）
 
 ## 1. 项目定位
 
@@ -76,9 +76,10 @@ main.ts                      装配：new适配器 → new索引 → registerVie
  │   ├─ refresh.ts           MmsIndex：刷新流水线与全局索引
  │   └─ selection.ts         MmsSelection：当前文件＋选中节点总线
  ├─ render/
- │   ├─ dom/index.ts         探索视图（DocumentFragment）
- │   ├─ svg/index.ts         全景视图（SVGElement）
+ │   ├─ dom/index.ts         探索视图（DocumentFragment；指令样式／折叠徽标／调试叠加）
+ │   ├─ svg/index.ts         全景视图（SVGElement；指令样式／折叠徽标／调试叠加）
  │   ├─ shared/edges.ts      两种视图共用的连线路径（line／curve）
+ │   ├─ shared/extensions.ts `!--`指令渲染期继承与语义→画法映射（KEY_RENDERERS／折叠剪枝／运行时）
  │   └─ canvas-viewport.ts   鼠标／触控视口与缩放
  ├─ ui/
  │   ├─ left-panel.ts        标签云＋搜索栏＋文件树（折叠持久化）＋调试信息＋状态卡
@@ -214,11 +215,13 @@ npx vitest run                                          # 96例单测
 |---|---|---|
 | `test/core/frontmatter.test.ts` | frontmatter五个固定键与非法值回退 | 10 |
 | `test/core/parser/parser.test.ts` | 节点层级、正文、注释、跨边、节点引用、嵌入 | 26 |
-| `test/core/parser/demo.test.ts` | 按 `demo/` 目录分组的真实素材冒烟与布局算法 | 35 |
+| `test/core/parser/directive.test.ts` | `!--`指令：行格式、key归一化、白名单拦截、绑定、寻址、冲突、孤儿、`<**`剥离、绑定行索引 | 47 |
+| `test/core/parser/demo.test.ts` | 按 `demo/` 目录分组的真实素材冒烟与布局算法 | 48 |
 | `test/core/index-builder.test.ts` | 跨文件引用解析、节点引用解析与出链聚合 | 8 |
 | `test/core/layout/layout.test.ts` | 四方向布局的主轴推进与翻转 | 5 |
 | `test/render/shared/edges.test.ts` | 连线锚点、直线／折线插值与曲线安全推力 | 12 |
-| 合计 | — | 96 |
+| `test/render/shared/extensions.test.ts` | 指令渲染：继承、KEY_RENDERERS映射、值校验、折叠剪枝、运行时、auto不可折叠 | 37 |
+| 合计 | — | 192 |
 
 ## 5. 文档索引
 
@@ -233,6 +236,6 @@ npx vitest run                                          # 96例单测
 
 ## 6. 现状
 
-**已实现**：`.mms`语法v1全量解析（frontmatter／标题节点／`--`子节点／正文／`**`注释／`<=>`跨边／`::`节点引用／`![[]]`嵌入）；跳级补空节点、缺根与多根告警、同父同名合并；跨文件引用与节点引用回填、出链与入链登记；四方向布局（`TB`／`BT`／`LR`／`RL`）与三种连线样式（`line`／`curve`／`elbow`）；探索视图与全景视图双画法；鼠标与触控视口；左sidebar文件面板（标签云／文件搜索／文件树／调试信息／状态卡）；右侧详情面板（正文／注释／标签／引用链／入链／出链／嵌入资源／打开源码）；vault事件防抖自动重扫；同文件标签页复用与行号定位；9项设置与防抖自动刷新；ribbon图标与3条命令。
+**已实现**：`.mms`语法v1.3全量解析（frontmatter／标题节点／`--`子节点／正文／`**`注释／`<=>`跨边／`::`节点引用／`![[]]`嵌入／`!--`节点级指令与`<**`行尾注释）；指令默认绑定／`<--`目标寻址（前向引用＋最近距离）／同key冲突裁决／白名单拦截（清单外key记`directive-unknown-key`不存储）／`directiveBindings`行索引（供写回定位）；渲染落地——`KEY_RENDERERS`语义→画法映射（7样式key×DOM/SVG双画法＋值校验防注入）、`createDirectiveRuntime`运行时（继承求值／连线样式／折叠剪枝）、行为类三key接交互层（折叠徽标点击写回文档`collapsed`指令行——持久化即文档、auto补齐节点不提供折叠，调试叠加，锁定置灰）；跳级补空节点、缺根与多根告警、同父同名合并；跨文件引用与节点引用回填、出链与入链登记；四方向布局（`TB`／`BT`／`LR`／`RL`）与三种连线样式（`line`／`curve`／`elbow`）；探索视图与全景视图双画法；鼠标与触控视口；左sidebar文件面板（标签云／文件搜索／文件树／调试信息／状态卡）；右侧详情面板（正文／注释／标签／引用链／入链／出链／嵌入资源／打开源码）；vault事件防抖自动重扫；同文件标签页复用与行号定位；9项设置与防抖自动刷新；ribbon图标与3条命令。
 
-**规划**：仓库未设TODO文件，未落地能力见[CHANGELOG.md](CHANGELOG.md)「已知限制」与[docs/mms-语言规范.md](docs/mms-语言规范.md)§10.2。
+**规划**：仓库未设TODO文件，未落地能力见[CHANGELOG.md](CHANGELOG.md)「已知限制」与[docs/mms-语言规范.md](docs/mms-语言规范.md)§11.2。
