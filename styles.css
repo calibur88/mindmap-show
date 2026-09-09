@@ -375,6 +375,26 @@
   border-color: var(--text-error);
 }
 
+/* 搜索命中导航：多个节点含相同文本时「上一个/下一个」循环跳转 */
+.mms-search-nav {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
+.mms-search-nav.is-hidden {
+  display: none;
+}
+
+.mms-search-counter {
+  min-width: 30px;
+  text-align: center;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
 .mms-canvas-body {
   position: relative;
   flex: 1 1 auto;

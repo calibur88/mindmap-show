@@ -7,7 +7,7 @@
  */
 
 import { FileView, TFile, WorkspaceLeaf } from 'obsidian';
-import type { IOpener, IUiHost, IParsedDoc, UiStatus } from '../host/types';
+import type { IMmsNode, IOpener, IUiHost, IParsedDoc, UiStatus } from '../host/types';
 import type { MmsIndex } from '../controller/refresh';
 import type { MmsSelection } from '../controller/selection';
 import type { MmsSettings } from '../settings/schema';
@@ -51,6 +51,11 @@ export class MmsView extends FileView {
   private tagsExpanded = false;
   /** 搜索词：renderToolbar 重建时回填输入框；切换文件时重置 */
   private searchQuery = '';
+  /** 最近一次搜索的命中节点 id 列表与当前下标；「上一个/下一个」循环导航用，切换文件/改输入时失效 */
+  private searchHits: string[] = [];
+  private searchHitIdx = -1;
+  private searchNavEl: HTMLElement | null = null;
+  private searchCounterEl: HTMLElement | null = null;
 
   private readonly boundRenderAll = (): void => this.renderAll();
   private readonly boundSettingsChange = (): void => this.applySettings();
@@ -87,6 +92,8 @@ export class MmsView extends FileView {
     this.viewModeOverridden = false;
     this.tagsExpanded = false;
     this.searchQuery = '';
+    this.searchHits = [];
+    this.searchHitIdx = -1;
     this.deps.selection.set(file.path, null);
     this.deps.ensureDetailLeaf();
     if (!this.canvasBody) this.buildShell();
@@ -183,12 +190,18 @@ export class MmsView extends FileView {
     const searchRow = el('div', { cls: 'mms-toolbar-row mms-toolbar-search' });
     this.searchBox = el('input', {
       cls: 'mms-search-input',
-      attr: { type: 'search', placeholder: '搜索节点名称或 ID…', 'aria-label': '搜索当前文件的节点' },
+      attr: { type: 'search', placeholder: '搜索节点名称、正文、注释、链接…', 'aria-label': '搜索当前文件的节点' },
     }) as HTMLInputElement;
     this.searchBox.value = this.searchQuery;
     this.searchBox.addEventListener('input', () => {
       this.searchQuery = this.searchBox?.value ?? '';
       this.searchBox?.classList.remove('is-invalid');
+      // 输入变化后旧命中失效，清导航态（按「搜索」/ Enter 重新检索）
+      if (this.searchHits.length > 0) {
+        this.searchHits = [];
+        this.searchHitIdx = -1;
+        this.updateSearchNav();
+      }
     });
     this.searchBox.addEventListener('keydown', (evt) => {
       if (evt.key === 'Enter') {
@@ -202,6 +215,19 @@ export class MmsView extends FileView {
     const searchBtn = el('button', { cls: 'mms-mini-btn', text: '搜索', attr: { type: 'button' } });
     searchBtn.addEventListener('click', () => this.searchNode(this.searchQuery));
     searchRow.appendChild(searchBtn);
+
+    // 命中导航：多个节点含相同文本（如重复正文）时「上一个/下一个」循环跳转，含计数
+    this.searchNavEl = el('span', { cls: 'mms-search-nav is-hidden' });
+    const prevBtn = el('button', { cls: 'mms-mini-btn', text: '‹ 上一个', attr: { type: 'button', title: '上一个匹配（循环）' } });
+    prevBtn.addEventListener('click', () => this.gotoHit(this.searchHitIdx - 1));
+    const nextBtn = el('button', { cls: 'mms-mini-btn', text: '下一个 ›', attr: { type: 'button', title: '下一个匹配（循环）' } });
+    nextBtn.addEventListener('click', () => this.gotoHit(this.searchHitIdx + 1));
+    this.searchCounterEl = el('span', { cls: 'mms-search-counter' });
+    this.searchNavEl.appendChild(prevBtn);
+    this.searchNavEl.appendChild(this.searchCounterEl);
+    this.searchNavEl.appendChild(nextBtn);
+    searchRow.appendChild(this.searchNavEl);
+    this.updateSearchNav();
 
     searchRow.appendChild(el('span', { cls: 'mms-spacer' }));
 
@@ -227,8 +253,9 @@ export class MmsView extends FileView {
   }
 
   /**
-   * 节点搜索定位：精确文本 → 精确 id → 包含文本 → 包含 id（大小写不敏感）。
-   * 命中后走选中总线（右栏联动）并把视口平移到该节点居中
+   * 节点搜索：检索当前文件全部展示文本（名称／正文／注释／`<=>`与`::`引用／嵌入），
+   * 大小写不敏感；精确名称命中排最前，其余按源码行序。全部命中存入 searchHits，
+   * 供「上一个／下一个」循环导航（节点 id 是内部标识，不参与匹配）
    */
   private searchNode(raw: string): void {
     const query = raw.trim();
@@ -237,28 +264,52 @@ export class MmsView extends FileView {
     if (!doc) return;
 
     const lower = query.toLowerCase();
-    const nodes = [...doc.nodeMap.values()];
-    const hit =
-      nodes.find((n) => n.text === query) ??
-      nodes.find((n) => n.id === query) ??
-      nodes.find((n) => !n.isAutoFix && n.text.toLowerCase().includes(lower)) ??
-      nodes.find((n) => n.id.toLowerCase().includes(lower));
+    const matches = (n: IMmsNode): boolean =>
+      n.text.toLowerCase().includes(lower) ||
+      n.content.some((l) => l.toLowerCase().includes(lower)) ||
+      n.annotation.some((l) => l.toLowerCase().includes(lower)) ||
+      n.crossRefs.some((r) => r.rawTarget.toLowerCase().includes(lower) || r.label.toLowerCase().includes(lower)) ||
+      n.nodeRefs.some((r) => r.rawTarget.toLowerCase().includes(lower)) ||
+      n.embeds.some((e) => e.raw.toLowerCase().includes(lower));
 
-    if (!hit) {
+    this.searchHits = [...doc.nodeMap.values()]
+      .filter((n) => !n.isAutoFix && matches(n))
+      .sort((a, b) => Number(b.text === query) - Number(a.text === query) || a.lineNo - b.lineNo)
+      .map((n) => n.id);
+
+    if (this.searchHits.length === 0) {
+      this.searchHitIdx = -1;
       this.searchBox?.classList.add('is-invalid');
       this.updateFooter(`未找到匹配节点：${query}`);
+      this.updateSearchNav();
       return;
     }
     this.searchBox?.classList.remove('is-invalid');
-    this.selectNode(hit.id);
-    // 选中总线同步触发高亮；节点可能处于折叠分支（被剪枝不在 DOM），此时只提示不居中
-    const nodeEl = this.canvasBody?.querySelector(`[data-node-id="${CSS.escape(hit.id)}"]`);
-    if (nodeEl) {
-      this.viewport.centerOnElement(nodeEl);
-      this.updateFooter(`已定位：${hit.text}`);
-    } else {
-      this.updateFooter(`已选中（节点在折叠分支中，展开后可见）：${hit.text}`);
-    }
+    this.gotoHit(0);
+  }
+
+  /** 跳转到第 idx 个命中（越界循环）：选中＋居中＋footer 计数提示 */
+  private gotoHit(idx: number): void {
+    const total = this.searchHits.length;
+    if (total === 0) return;
+    this.searchHitIdx = ((idx % total) + total) % total;
+    const nodeId = this.searchHits[this.searchHitIdx];
+    this.selectNode(nodeId);
+    // 节点可能处于折叠分支（被剪枝不在 DOM）：只选中不居中，footer 说明
+    const nodeEl = this.canvasBody?.querySelector(`[data-node-id="${CSS.escape(nodeId)}"]`);
+    if (nodeEl) this.viewport.centerOnElement(nodeEl);
+    const node = this.currentDoc()?.nodeMap.get(nodeId);
+    const where = nodeEl ? '' : '（在折叠分支中，展开后可见）';
+    this.updateFooter(`匹配 ${this.searchHitIdx + 1}/${total}${where}：${node?.text ?? nodeId}`);
+    this.updateSearchNav();
+  }
+
+  /** 按命中状态刷新导航按钮显示与计数 */
+  private updateSearchNav(): void {
+    if (!this.searchNavEl || !this.searchCounterEl) return;
+    const has = this.searchHits.length > 0 && this.searchHitIdx >= 0;
+    this.searchNavEl.classList.toggle('is-hidden', !has);
+    if (has) this.searchCounterEl.textContent = `${this.searchHitIdx + 1}/${this.searchHits.length}`;
   }
 
   private async renderCanvas(): Promise<void> {
