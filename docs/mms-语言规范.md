@@ -510,6 +510,7 @@ https://example.com/dashboard
 - 两遍扫描：第一遍建节点树 + 收集指令（白名单拦截在收集时执行），第二遍回填（寻址 + 冲突裁决），复用 `<=>` 的 pending 队列骨架
 - 单遍解析的既有逻辑保持不变，`<=>` / `::` / `![[` / `**` 解析不得回归
 - 渲染落地：`render/shared/extensions.ts` 提供 `KEY_RENDERERS` 映射与 `createDirectiveRuntime` 运行时，DOM 探索视图与 SVG 全景视图共用；折叠徽标点击直接写回文档 `collapsed` 指令行（插入到声明行之后 / 改写显式 `> false` / 删除绑定行），持久化即文档本身、不进设置文件；写回后经 vault modify 事件防抖重扫重渲染；`collapsed` 是唯一由 UI 写回文档的指令，`debug` / `locked` 仅由用户手写
+- SVG 交互性（设计澄清）：SVG 图元（`<g>`／`<rect>`／`<text>`）是一等 DOM 元素、继承自 `EventTarget`，`addEventListener` 直接生效；全景视图「静态全量」仅指渲染内容（一次全量画完、不做增量更新），不预设交互能力上限。当前已接入：节点选中联动（`<g>` 挂 click → 与探索视图同一条选中分发链，右栏三卡跟随切换）与折叠徽标点击（同一条 `collapsed` 写回管线，重扫后 SVG 重渲染）。后续接入新交互（如 `locked` 禁点击选中、光标置 `not-allowed`）建议事件委托实现：`<svg>` 根挂单一 click listener，`event.target.closest('[data-node-id]')` 反查节点（渲染层给每个 `<g>` 打 `data-node-id`），一个 listener 管全部节点，重渲染免重绑
 - 明确不做（v1 范围外）：多目标逗号列表、`[n]` 索引、路径/相对寻址、路径转义、模糊匹配；`<--` 多次出现（首个生效，其余属目标文本）；清单外 key 的存储与渲染（一律 `directive-unknown-key` 告警）
 - 测试覆盖：`<**` 在标题行 / 指令行 / content 行的剥离、`#` 无空格不作为标题、最近距离匹配（含上下双向与同距取上方）、深度不匹配触发 warning、冲突保留先写者、孤儿指令挂文档级、行为类 value 表全分支、key 归一化、未知 key 告警不存储、指令行内 `![[` 不入 embeds、DOM/SVG 样式映射与值校验、折叠剪枝、渲染运行时聚合
 
