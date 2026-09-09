@@ -26,7 +26,7 @@ function stripInlineComment(value: string): string {
   return value.replace(/\s+#.*$/, '').trim();
 }
 
-/** 解析 mms_tags，同时支持 `a, b` 与 `[a, b]` 两种写法 */
+/** 解析 mms_tags，支持 `a, b`、`[a, b]` 与 YAML 块列表（`- item` 逐行）三种写法 */
 function parseTags(raw: string): string[] {
   let value = stripInlineComment(raw);
   if (value.startsWith('[') && value.endsWith(']')) {
@@ -36,6 +36,31 @@ function parseTags(raw: string): string[] {
     .split(',')
     .map((s) => s.trim().replace(/^["']|["']$/g, ''))
     .filter(Boolean);
+}
+
+/** 从块列表行（`- item`）提取标签文本；非列表行返回 null */
+function parseListItem(line: string): string | null {
+  const match = /^[\t ]*-\s+(.*)$/.exec(line);
+  if (!match) return null;
+  // 先剥行尾逗号再去首尾引号，顺序反了会把 `"a",` 剥成 `a"`
+  return match[1].trim().replace(/,\s*$/, '').trim().replace(/^["']|["']$/g, '');
+}
+
+/**
+ * 收集 mms_tags 的 YAML 块列表项：自 tagsIdx 下一行起，取连续的 `- item` 行。
+ * Obsidian 属性面板对列表型属性固定写块列表格式，必须支持
+ */
+function collectBlockListTags(lines: readonly string[], tagsIdx: number): string[] {
+  const tags: string[] = [];
+  for (let i = tagsIdx + 1; i < lines.length; i++) {
+    const line = lines[i];
+    if (line.trim() === '' ) continue;
+    if (line.trim() === '---') break;
+    const item = parseListItem(line);
+    if (item === null || item === '') break;
+    tags.push(item);
+  }
+  return tags;
 }
 
 /**
@@ -69,8 +94,14 @@ export function splitFrontmatter(content: string): SplitResult {
   const nameMatch = rawFm.match(/^mms_name:\s*(.*)/mi);
   if (nameMatch) result.mms_name = stripInlineComment(nameMatch[1]);
 
-  const tagsMatch = rawFm.match(/^mms_tags:\s*(.*)/mi);
-  if (tagsMatch) result.mms_tags = parseTags(tagsMatch[1]);
+  const tagsMatch = rawFm.match(/^mms_tags:[ \t]*(.*)/mi);
+  if (tagsMatch) {
+    const inline = parseTags(tagsMatch[1]);
+    // 同行无值时尝试 YAML 块列表（`- item` 逐行，Obsidian 属性面板写入格式）
+    const tagsIdx = lines.findIndex((l) => /^mms_tags:/i.test(l));
+    const block = tagsIdx >= 0 ? collectBlockListTags(lines, tagsIdx) : [];
+    result.mms_tags = inline.length > 0 ? inline : block;
+  }
 
   const layoutMatch = rawFm.match(/^mms_layout:\s*(.*)/mi);
   if (layoutMatch) {
@@ -88,7 +119,7 @@ export function splitFrontmatter(content: string): SplitResult {
     }
   }
 
-  const descMatch = rawFm.match(/^mms_desc:\s*(.*)/mi);
+  const descMatch = rawFm.match(/^mms_desc:[ \t]*(.*)/mi);
   if (descMatch) result.mms_desc = stripInlineComment(descMatch[1]);
 
   return {

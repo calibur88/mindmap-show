@@ -210,7 +210,7 @@ interface IBuildEdgesOptions {
 | `LeftPanel(container, opener, uiHost, onRefresh, onSelectTag, openDetailPanel, getCollapsedFolders, persistCollapsedFolders)` | 左 sidebar 全部 UI：标签栏 / 搜索栏 / 文件树（折叠状态经 `getCollapsedFolders`／`persistCollapsedFolders` 读写 `settings.collapsedFolders`，箭头`▸`/`▾`指示，局部更新不重绘整树）/ 调试信息 / 状态卡；`destroy()` 注销状态卡监听并移除 DOM |
 | `RightPanel(container, actions)` | 右栏节点详情：来源文件 / 当前节点 / 标签 / 引用链（选中节点的`<=>`跨边＋`::`定位合并展示，断链灰显）/ 入链（`<=>`指向该节点的来源，同文件显示为「本文件」）/ 出链（文件级，同文件引用不进此卡）/ 节点注释 / 嵌入资源，`actions` 提供 `openSource` 与 `openAndSelect` 跳转；`renderEmpty(hint?)` 支持降级提示。三卡条目统一交互：单击高亮（互斥、再点取消、重渲染自动清除），「跳转」按钮两段式——未高亮跳节点（入链跳来源节点）、高亮后跳源码行（出链跳本文件`<=>`行） |
 | `StatusCard(container, uiHost, onRefresh, openDetailPanel)` | 左栏底部状态卡（刷新 / 查看详情 两个按钮，仅异常态显示文案）；`destroy()` 注销 `onStatus` 监听 |
-| `CanvasViewport` | 画布视口（鼠标 / 触控 + 缩放） |
+| `CanvasViewport` | 画布视口（鼠标 / 触控 + 缩放）；`centerOnElement(el)` 平移视口使节点居中（缩放不变，搜索定位用） |
 
 左栏文件搜索的行为契约（`LeftPanel` 内部状态 `keyword`，空串表示不过滤）：
 

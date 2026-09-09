@@ -41,6 +41,34 @@ describe('splitFrontmatter', () => {
     expect(splitFrontmatter('---\nmms_tags: [a, b]\n---\n# R').frontmatter?.mms_tags).toEqual(['a', 'b']);
   });
 
+  it('mms_tags 支持 YAML 块列表（Obsidian 属性面板写入格式）', () => {
+    const fm = splitFrontmatter('---\nmms_name: 边界用例\nmms_tags:\n  - 示例\n  - 边界与异常\n  - 时代的\n---\n# 根').frontmatter;
+    expect(fm?.mms_name).toBe('边界用例');
+    expect(fm?.mms_tags).toEqual(['示例', '边界与异常', '时代的']);
+  });
+
+  it('mms_tags 块列表项带引号与行尾逗号时剥离', () => {
+    const fm = splitFrontmatter('---\nmms_tags:\n  - "a",\n  - \'b\'\n---\n# R').frontmatter;
+    expect(fm?.mms_tags).toEqual(['a', 'b']);
+  });
+
+  it('mms_tags 块列表在下一个键处停止，不吞其他字段', () => {
+    const fm = splitFrontmatter('---\nmms_tags:\n  - a\nmms_layout: TB\nmms_desc: 备注\n---\n# R').frontmatter;
+    expect(fm?.mms_tags).toEqual(['a']);
+    expect(fm?.mms_layout).toBe('TB');
+    expect(fm?.mms_desc).toBe('备注');
+  });
+
+  it('mms_tags 同行有值时优先同行，不读块列表', () => {
+    const fm = splitFrontmatter('---\nmms_tags: a, b\nmms_layout: TB\n---\n# R').frontmatter;
+    expect(fm?.mms_tags).toEqual(['a', 'b']);
+  });
+
+  it('mms_tags 空值且无块列表时为空数组（不误读下一个键）', () => {
+    const fm = splitFrontmatter('---\nmms_tags:\nmms_layout: TB\n---\n# R').frontmatter;
+    expect(fm?.mms_tags).toEqual([]);
+  });
+
   it('mms_layout 非法值被忽略', () => {
     expect(splitFrontmatter('---\nmms_layout: XX\n---\n# R').frontmatter?.mms_layout).toBeUndefined();
     expect(resolveLayout(splitFrontmatter('---\nmms_layout: XX\n---\n# R').frontmatter)).toBe('LR');

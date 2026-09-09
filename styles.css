@@ -312,16 +312,67 @@
 
 .mms-canvas-toolbar {
   display: flex;
-  align-items: center;
+  flex-direction: column;
   flex: 0 0 auto;
-  gap: 6px;
+  gap: 4px;
   padding: 6px 8px;
   border-bottom: var(--mms-border);
   font-size: 12px;
 }
 
+/* 工具栏行容器：标签行与搜索行共用 */
+.mms-toolbar-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
 .mms-canvas-toolbar .mms-spacer {
   flex: 1 1 auto;
+}
+
+/* 标签盒：折叠态单行截断（防多标签溢出，移动端友好），展开态换行全显 */
+.mms-tags-box {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  flex: 0 1 auto;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.mms-tags-box.is-expanded {
+  flex-wrap: wrap;
+  overflow: visible;
+  white-space: normal;
+}
+
+.mms-tag-more {
+  background-color: var(--background-modifier-border);
+  color: var(--text-on-accent);
+}
+
+/* 节点搜索输入框 */
+.mms-search-input {
+  flex: 1 1 120px;
+  min-width: 0;
+  padding: 2px 8px;
+  border: var(--mms-border);
+  border-radius: 4px;
+  background-color: var(--background-primary);
+  color: var(--text-normal);
+  font-size: 12px;
+}
+
+.mms-search-input:focus {
+  outline: none;
+  border-color: var(--interactive-accent);
+}
+
+.mms-search-input.is-invalid {
+  border-color: var(--text-error);
 }
 
 .mms-canvas-body {
@@ -488,6 +539,16 @@
 
   .mms-jump-btn {
     min-height: 28px;
+  }
+
+  /* 画布工具栏（安卓适配）：搜索框与按钮加大命中区，两行布局不挤在一条里 */
+  .mms-search-input {
+    min-height: 32px;
+  }
+
+  .mms-canvas-toolbar .mms-mini-btn {
+    min-height: 32px;
+    padding: 4px 12px;
   }
 }
 

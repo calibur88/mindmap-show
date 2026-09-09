@@ -39,7 +39,7 @@ npm install --registry=https://registry.npmmirror.com   # 装依赖，国内建�
 npm run dev                                             # watch构建，产物直出 test-vault-local/.obsidian/plugins/mindmap-show/
 node esbuild.config.mjs once                            # 单次构建，同样直出上述测试vault目录
 npm run build                                           # tsc --noEmit + 产出 dist/
-npx vitest run                                          # 跑 96 例 core/render 层单测
+npx vitest run                                             # 跑 197 例 core/render 层单测
 npx tsc --noEmit                                        # 严格模式类型检查
 ```
 

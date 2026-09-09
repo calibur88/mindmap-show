@@ -113,6 +113,22 @@ export class CanvasViewport {
     this.apply();
   }
 
+  /**
+   * 平移视口使指定元素（画布内的节点）居中，缩放保持不变。
+   * 搜索定位入口：DOM 探索视图传 HTMLElement、SVG 全景视图传 <g>，统一按 Element 取包围盒
+   */
+  centerOnElement(target: Element): void {
+    if (!this.body || !this.holder) return;
+    const bodyRect = this.body.getBoundingClientRect();
+    const elRect = target.getBoundingClientRect();
+    // 当前屏幕偏移：节点中心相对 body 中心，直接平移抵消
+    const dx = elRect.left + elRect.width / 2 - (bodyRect.left + bodyRect.width / 2);
+    const dy = elRect.top + elRect.height / 2 - (bodyRect.top + bodyRect.height / 2);
+    this.state.tx -= dx;
+    this.state.ty -= dy;
+    this.apply();
+  }
+
   private apply(): void {
     if (!this.holder) return;
     const { tx, ty, scale } = this.state;
