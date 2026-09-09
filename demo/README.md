@@ -198,7 +198,7 @@ https://example.com
 ## 调试与锁定
 !-- debug
 !-- locked
-** debug＝左上角灰底小签显示「节点id·源码行号」；locked＝禁拖拽＋右栏置灰
+** debug＝左上角灰底小签显示「节点id·源码行号」；locked＝禁点击选中＋右栏置灰
 
 !-- color > #E67E22 <-- ## 前向引用分支
 ## 前向引用分支

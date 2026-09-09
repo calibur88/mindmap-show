@@ -19,7 +19,7 @@
 - **纯函数渲染**：`render*`函数只依赖入参产出`DocumentFragment`／`SVGElement`，同输入必得同输出；
 - **单向依赖**：`main → views → ui → render → controller → core → host/types`，任何层不得反向依赖（唯一例外：`views/settings-tab`以`import type`引用`main`的插件类型，纯类型无运行时依赖）；
 - **设置即偏好**：`MmsSettings`只存展示偏好，不存任何业务数据，解析结果永不落盘。
-- **SVG即DOM**：全景视图的「静态」仅指渲染内容静态全量，不是交互能力裁决——SVG图元（`<g>`／`<rect>`／`<text>`）继承自`EventTarget`，`addEventListener`直接生效；节点选中联动与折叠徽标点击同探索视图一样走`MmsSelection`选中总线与文档写回管线，后续新交互按需接入，大规模节点建议事件委托（根节点单一listener＋`data-node-id`反查，重渲染免重绑）。
+- **SVG即DOM**：全景视图的「静态」仅指渲染内容静态全量，不是交互能力裁决——SVG图元（`<g>`／`<rect>`／`<text>`）继承自`EventTarget`，`addEventListener`直接生效；节点选中联动与折叠徽标点击同探索视图一样走`MmsSelection`选中总线与文档写回管线，`locked`节点禁点击选中（光标`not-allowed`）；两视图节点事件均按事件委托实现（根单一listener＋`data-node-id`反查，重渲染免重绑），后续新交互按需接入。
 
 ## 2. 工程结构
 
@@ -77,8 +77,8 @@ main.ts                      装配：new适配器 → new索引 → registerVie
  │   ├─ refresh.ts           MmsIndex：刷新流水线与全局索引
  │   └─ selection.ts         MmsSelection：当前文件＋选中节点总线
  ├─ render/
- │   ├─ dom/index.ts         探索视图（DocumentFragment；指令样式／折叠徽标／调试叠加）
- │   ├─ svg/index.ts         全景视图（SVGElement；指令样式／折叠徽标／调试叠加）
+ │   ├─ dom/index.ts         探索视图（DocumentFragment；指令样式／折叠徽标／调试叠加／事件委托）
+ │   ├─ svg/index.ts         全景视图（SVGElement；指令样式／折叠徽标／调试叠加／事件委托）
  │   ├─ shared/edges.ts      两种视图共用的连线路径（line／curve）
  │   ├─ shared/extensions.ts `!--`指令渲染期继承与语义→画法映射（KEY_RENDERERS／折叠剪枝／运行时）
  │   └─ canvas-viewport.ts   鼠标／触控视口与缩放
@@ -237,6 +237,6 @@ npx vitest run                                          # 96例单测
 
 ## 6. 现状
 
-**已实现**：`.mms`语法v1.3全量解析（frontmatter／标题节点／`--`子节点／正文／`**`注释／`<=>`跨边／`::`节点引用／`![[]]`嵌入／`!--`节点级指令与`<**`行尾注释）；指令默认绑定／`<--`目标寻址（前向引用＋最近距离）／同key冲突裁决／白名单拦截（清单外key记`directive-unknown-key`不存储）／`directiveBindings`行索引（供写回定位）；渲染落地——`KEY_RENDERERS`语义→画法映射（7样式key×DOM/SVG双画法＋值校验防注入）、`createDirectiveRuntime`运行时（继承求值／连线样式／折叠剪枝）、行为类三key接交互层（折叠徽标点击写回文档`collapsed`指令行——持久化即文档、auto补齐节点不提供折叠，调试叠加，锁定置灰）；跳级补空节点、缺根与多根告警、同父同名合并；跨文件引用与节点引用回填、出链与入链登记；四方向布局（`TB`／`BT`／`LR`／`RL`）与三种连线样式（`line`／`curve`／`elbow`）；探索视图与全景视图双画法（两视图节点点击均走`MmsSelection`选中总线联动右栏、折叠徽标均走同一条文档写回管线——SVG图元是一等DOM，全景视图交互按需接入）；鼠标与触控视口；左sidebar文件面板（标签云／文件搜索／文件树／调试信息／状态卡）；右侧详情面板（正文／注释／标签／引用链／入链／出链／嵌入资源／打开源码）；vault事件防抖自动重扫；同文件标签页复用与行号定位；9项设置与防抖自动刷新；ribbon图标与3条命令。
+**已实现**：`.mms`语法v1.3全量解析（frontmatter／标题节点／`--`子节点／正文／`**`注释／`<=>`跨边／`::`节点引用／`![[]]`嵌入／`!--`节点级指令与`<**`行尾注释）；指令默认绑定／`<--`目标寻址（前向引用＋最近距离）／同key冲突裁决／白名单拦截（清单外key记`directive-unknown-key`不存储）／`directiveBindings`行索引（供写回定位）；渲染落地——`KEY_RENDERERS`语义→画法映射（7样式key×DOM/SVG双画法＋值校验防注入）、`createDirectiveRuntime`运行时（继承求值／连线样式／折叠剪枝）、行为类三key接交互层（折叠徽标点击写回文档`collapsed`指令行——持久化即文档、auto补齐节点不提供折叠，调试叠加，锁定禁点击选中＋置灰）；跳级补空节点、缺根与多根告警、同父同名合并；跨文件引用与节点引用回填、出链与入链登记；四方向布局（`TB`／`BT`／`LR`／`RL`）与三种连线样式（`line`／`curve`／`elbow`）；探索视图与全景视图双画法（两视图节点点击均走`MmsSelection`选中总线联动右栏、折叠徽标均走同一条文档写回管线、节点事件均按事件委托实现——SVG图元是一等DOM，全景视图交互按需接入）；鼠标与触控视口；左sidebar文件面板（标签云／文件搜索／文件树／调试信息／状态卡）；右侧详情面板（正文／注释／标签／引用链／入链／出链／嵌入资源／打开源码）；vault事件防抖自动重扫；同文件标签页复用与行号定位；9项设置与防抖自动刷新；ribbon图标与3条命令。
 
 **规划**：仓库未设TODO文件，未落地能力见[CHANGELOG.md](CHANGELOG.md)「已知限制」与[docs/mms-语言规范.md](docs/mms-语言规范.md)§11.2。

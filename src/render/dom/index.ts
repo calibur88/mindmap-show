@@ -51,6 +51,9 @@ function buildNode(
     root.style.setProperty(prop, value);
   }
 
+  // locked 提示（与全景视图 <title> 口径一致）
+  if (meta.locked) root.setAttribute('title', `${node.text}（已锁定）`);
+
   root.appendChild(el('div', { cls: 'mms-node-text', text: node.isAutoFix ? '（自动补齐）' : node.text }));
 
   for (const line of node.content.slice(0, 2)) {
@@ -79,24 +82,17 @@ function buildNode(
     root.appendChild(el('div', { cls: 'mms-debug-chip', text: `${node.id} · L${node.lineNo}` }));
   }
 
-  // 折叠徽标：有子节点的节点均可折叠（指令 collapsed 给初始态，点击切换运行时覆盖态）
+  // 折叠徽标：有子节点的节点均可折叠（指令 collapsed 给初始态，点击切换运行时覆盖态）。
+  // 只产出 DOM 结构（is-collapsed class 即状态载体），点击由画布上的委托 listener 分流
   if (meta.foldable && options.onToggleCollapse) {
     const fold = el('button', {
       cls: `mms-fold-btn mms-fold-btn--${direction.toLowerCase()}${meta.collapsed ? ' is-collapsed' : ''}`,
       text: meta.collapsed ? `+${meta.hiddenCount}` : '−',
-      attr: { type: 'button', title: meta.collapsed ? '展开子节点' : '折叠子节点' },
-    });
-    fold.addEventListener('click', (evt) => {
-      evt.stopPropagation();
-      options.onToggleCollapse?.(node.id, meta.collapsed);
+      attr: { type: 'button', title: meta.collapsed ? '展开子节点' : '折叠子节点', 'data-fold-id': node.id },
     });
     root.appendChild(fold);
   }
 
-  if (options.onNodeClick) {
-    root.style.cursor = 'pointer';
-    root.addEventListener('click', () => options.onNodeClick?.(node.id));
-  }
   return root;
 }
 
@@ -153,6 +149,32 @@ export function renderExplore(doc: IParsedDoc, options: ExploreRenderOptions): D
     layer.appendChild(nodeEl);
   }
   canvas.appendChild(layer);
+
+  // 事件委托：画布上单一 click listener，event.target.closest 反查节点（与全景视图同一套分流逻辑）。
+  // 一个 listener 管全部节点，重渲染不需要重新绑定（规范 §10.10）
+  if (options.onNodeClick || options.onToggleCollapse) {
+    canvas.classList.add('is-clickable');
+    canvas.addEventListener('click', (evt) => {
+      const target = evt.target;
+      if (!(target instanceof Element)) return;
+      // 折叠徽标优先分流（徽标位于节点内部，须先于节点分支判断）
+      const fold = target.closest('.mms-fold-btn');
+      if (fold) {
+        if (options.onToggleCollapse) {
+          const nodeId = fold.getAttribute('data-fold-id');
+          if (nodeId) options.onToggleCollapse(nodeId, fold.classList.contains('is-collapsed'));
+        }
+        return;
+      }
+      if (!options.onNodeClick) return;
+      const nodeEl = target.closest('.mms-dom-node[data-node-id]');
+      const nodeId = nodeEl?.getAttribute('data-node-id');
+      if (!nodeEl || !nodeId) return;
+      // locked 拦截：不触发选中（title 已提示「已锁定」，CSS 光标 not-allowed）
+      if (nodeEl.classList.contains('is-locked')) return;
+      options.onNodeClick(nodeId);
+    });
+  }
 
   fragment.appendChild(canvas);
   return fragment;

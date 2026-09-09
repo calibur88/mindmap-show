@@ -529,6 +529,18 @@
   transition: box-shadow 0.12s ease;
 }
 
+/* 画布节点光标（事件委托：canvas/svg 根单一 listener，节点不逐个绑定）；
+   locked 节点禁点击选中，光标 not-allowed */
+.mms-dom-canvas.is-clickable .mms-dom-node,
+.mms-svg-canvas.is-clickable .mms-svg-node {
+  cursor: pointer;
+}
+
+.mms-dom-canvas.is-clickable .mms-dom-node.is-locked,
+.mms-svg-canvas.is-clickable .mms-svg-node.is-locked {
+  cursor: not-allowed;
+}
+
 .mms-dom-node:hover {
   box-shadow: 0 0 0 2px var(--interactive-accent);
 }

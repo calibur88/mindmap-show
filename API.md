@@ -171,8 +171,8 @@ declare module 'obsidian' {
 
 | 函数 | 用途 | 返回 |
 |---|---|---|
-| `renderExplore(doc, opts)` | 探索视图（`opts.onNodeClick` 选中、`opts.onToggleCollapse` 折叠徽标写回） | `DocumentFragment` |
-| `renderPanorama(doc, opts)` | 全景视图（渲染内容静态全量；`opts.onNodeClick` 选中、`opts.onToggleCollapse` 折叠徽标写回——SVG 图元是一等 DOM，交互按需接入） | `SVGSVGElement` |
+| `renderExplore(doc, opts)` | 探索视图（`opts.onNodeClick` 选中、`opts.onToggleCollapse` 折叠徽标写回；事件委托：画布单一 click listener ＋ `closest('[data-node-id]')` 反查，`locked` 节点拦截不选中） | `DocumentFragment` |
+| `renderPanorama(doc, opts)` | 全景视图（渲染内容静态全量；`opts.onNodeClick` 选中、`opts.onToggleCollapse` 折叠徽标写回、`locked` 拦截——SVG 图元是一等 DOM，事件委托同探索视图） | `SVGSVGElement` |
 | `layoutTree(rootId, nodeMap, opts)` | 布局算法，`opts.direction` 支持 TB/BT/LR/RL | `ILayoutResult {nodes, edges, width, height}` |
 | `buildEdgePath(from, to, geo)` | 单条连线路径，`geo` 为 `{direction, lineStyle, gap}` | `string`（`M...L...` 直线或折线、`M...C...` 曲线） |
 | `buildEdgesSvg(layout, options)` | 连线层 SVG | `SVGSVGElement` |

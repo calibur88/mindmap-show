@@ -1,6 +1,7 @@
 /**
  * @module render/svg
- * @description 全景视图渲染：doc → SVG。纯矢量一次性静态输出，可无限缩放
+ * @description 全景视图渲染：doc → SVG。纯矢量一次性全量输出（渲染内容静态），可无限缩放；
+ * 节点交互经根上事件委托按需接入（选中／折叠徽标，SVG 图元是一等 DOM）
  */
 
 import type { ILayoutResult, ILayoutNode, IParsedDoc, MmsLayout } from '../../host/types';
@@ -161,7 +162,8 @@ export function renderPanorama(doc: IParsedDoc, options: PanoramaRenderOptions):
       g.appendChild(debug);
     }
 
-    // 折叠徽标：有子节点的节点均可折叠（指令 collapsed 给初始态，点击切换运行时覆盖态）
+    // 折叠徽标：有子节点的节点均可折叠（指令 collapsed 给初始态，点击切换运行时覆盖态）。
+    // 只产出 DOM 结构（is-collapsed class 即状态载体），点击由根上的委托 listener 分流
     if (meta.foldable && options.onToggleCollapse) {
       const anchor = foldAnchor(box, doc.layout);
       const fold = svgEl('g', { class: `mms-svg-fold${meta.collapsed ? ' is-collapsed' : ''}` });
@@ -178,19 +180,38 @@ export function renderPanorama(doc: IParsedDoc, options: PanoramaRenderOptions):
       const title2 = svgEl('title');
       title2.textContent = meta.collapsed ? '展开子节点' : '折叠子节点';
       fold.appendChild(title2);
-      fold.addEventListener('click', (evt) => {
-        evt.stopPropagation();
-        options.onToggleCollapse?.(node.id, meta.collapsed);
-      });
       g.appendChild(fold);
     }
 
-    if (options.onNodeClick) {
-      g.addEventListener('click', () => options.onNodeClick?.(id));
-    }
     group.appendChild(g);
   }
   svg.appendChild(group);
+
+  // 事件委托：根上单一 click listener，event.target.closest 反查节点。
+  // 一个 listener 管全部节点，重渲染不需要重新绑定（规范 §10.10）
+  if (options.onNodeClick || options.onToggleCollapse) {
+    svg.classList.add('is-clickable');
+    svg.addEventListener('click', (evt) => {
+      const target = evt.target;
+      if (!(target instanceof Element)) return;
+      // 折叠徽标优先分流（徽标位于节点 g 内部，须先于节点分支判断）
+      const fold = target.closest('.mms-svg-fold');
+      if (fold) {
+        if (options.onToggleCollapse) {
+          const nodeId = fold.closest('[data-node-id]')?.getAttribute('data-node-id');
+          if (nodeId) options.onToggleCollapse(nodeId, fold.classList.contains('is-collapsed'));
+        }
+        return;
+      }
+      if (!options.onNodeClick) return;
+      const nodeG = target.closest('.mms-svg-node[data-node-id]');
+      const nodeId = nodeG?.getAttribute('data-node-id');
+      if (!nodeG || !nodeId) return;
+      // locked 拦截：不触发选中（<title> 已提示「已锁定」，CSS 光标 not-allowed）
+      if (nodeG.classList.contains('is-locked')) return;
+      options.onNodeClick(nodeId);
+    });
+  }
 
   return svg;
 }
