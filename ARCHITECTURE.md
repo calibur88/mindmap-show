@@ -1,7 +1,7 @@
 # 项目整体架构
 
-> 本文是Mind Map Show（MMS）工程的权威架构说明。文档版本：v1.3（2026-09-09）
-> 插件版本：1.5.0 · 语法版本：`.mms` v1.3 · 最低依赖：Obsidian1.4.0 · 语言：TypeScript5.7（严格模式）
+> 本文是Mind Map Show（MMS）工程的权威架构说明。文档版本：v1.4（2026-09-10）
+> 插件版本：1.6.0 · 语法版本：`.mms` v1.4 · 最低依赖：Obsidian1.4.0 · 语言：TypeScript5.7（严格模式）
 
 ## 1. 项目定位
 
@@ -35,8 +35,9 @@ mindmap-show/
 │  ├─ views/                FileView／ItemView／设置面板
 │  ├─ settings/             设置schema与默认值
 │  └─ utils/                DOM工具与键值构造
-├─ demo/                    入库示例库（按功能用例分目录，15个.mms）
+├─ demo/                    入库示例库（按功能用例分目录，17个.mms）
 ├─ docs/                    .mms语言规范
+├─ scripts/                 工具脚本（gen_stress_mms.py压测.mms生成器，纯Python标准库）
 ├─ test/                    单测目录（镜像 src/ 结构，与被测模块一一对应）
 ├─ styles.css               全部样式集中一处
 ├─ manifest.json            插件清单
@@ -210,7 +211,7 @@ npm run dev                                             # watch构建，直出�
 node esbuild.config.mjs once                            # 单次构建，同上目录
 npm run build                                           # tsc --noEmit + 产出dist/
 npx tsc --noEmit                                        # 严格模式类型检查
-npx vitest run                                          # 96例单测
+npx vitest run                                          # 197例单测
 ```
 
 - 构建流程：入口`src/main.ts` → esbuild打包为单文件`main.js` → 连同`manifest.json`与`styles.css`复制到输出目录；输出目录优先级为环境变量`MMS_OUT_DIR`＞`production`时的`dist/`＞其他情况的测试vault插件目录；
@@ -221,15 +222,15 @@ npx vitest run                                          # 96例单测
 
 | 套件 | 领域 | 例数 |
 |---|---|---|
-| `test/core/frontmatter.test.ts` | frontmatter五个固定键与非法值回退 | 10 |
+| `test/core/frontmatter.test.ts` | frontmatter五个固定键、非法值回退与`mms_tags`块列表 | 15 |
 | `test/core/parser/parser.test.ts` | 节点层级、正文、注释、跨边、节点引用、嵌入 | 26 |
 | `test/core/parser/directive.test.ts` | `!--`指令：行格式、key归一化、白名单拦截、绑定、寻址、冲突、孤儿、`<**`剥离、绑定行索引 | 47 |
 | `test/core/parser/demo.test.ts` | 按 `demo/` 目录分组的真实素材冒烟与布局算法 | 48 |
 | `test/core/index-builder.test.ts` | 跨文件引用解析、节点引用解析与出链聚合 | 8 |
 | `test/core/layout/layout.test.ts` | 四方向布局的主轴推进与翻转 | 5 |
 | `test/render/shared/edges.test.ts` | 连线锚点、直线／折线插值与曲线安全推力 | 12 |
-| `test/render/shared/extensions.test.ts` | 指令渲染：继承、KEY_RENDERERS映射、值校验、折叠剪枝、运行时、auto不可折叠 | 37 |
-| 合计 | — | 192 |
+| `test/render/shared/extensions.test.ts` | 指令渲染：继承、KEY_RENDERERS映射、值校验、折叠剪枝、运行时、auto不可折叠 | 36 |
+| 合计 | — | 197 |
 
 ## 5. 文档索引
 
@@ -244,6 +245,6 @@ npx vitest run                                          # 96例单测
 
 ## 6. 现状
 
-**已实现**：`.mms`语法v1.3全量解析（frontmatter／标题节点／`--`子节点／正文／`**`注释／`<=>`跨边／`::`节点引用／`![[]]`嵌入／`!--`节点级指令与`<**`行尾注释）；指令默认绑定／`<--`目标寻址（前向引用＋最近距离）／同key冲突裁决／白名单拦截（清单外key记`directive-unknown-key`不存储）／`directiveBindings`行索引（供写回定位）；渲染落地——`KEY_RENDERERS`语义→画法映射（7样式key×DOM/SVG双画法＋值校验防注入）、`createDirectiveRuntime`运行时（继承求值／连线样式／折叠剪枝）、行为类三key接交互层（折叠徽标点击写回文档`collapsed`指令行——持久化即文档、auto补齐节点不提供折叠，调试叠加，锁定禁点击选中＋置灰）；跳级补空节点、缺根与多根告警、同父同名合并；跨文件引用与节点引用回填、出链与入链登记；四方向布局（`TB`／`BT`／`LR`／`RL`）与三种连线样式（`line`／`curve`／`elbow`）；探索视图与全景视图双画法（两视图节点点击均走`MmsSelection`选中总线联动右栏、折叠徽标均走同一条文档写回管线、节点事件均按事件委托实现——SVG图元是一等DOM，全景视图交互按需接入）；鼠标与触控视口；左sidebar文件面板（标签云／文件搜索／文件树／调试信息／状态卡）；右侧详情面板（正文／注释／标签／引用链／入链／出链／嵌入资源／打开源码）；vault事件防抖自动重扫；同文件标签页复用与行号定位；9项设置与防抖自动刷新；ribbon图标与3条命令。
+**已实现**：`.mms`语法v1.4全量解析（frontmatter（含`mms_tags`YAML块列表写法）／标题节点／`--`子节点／正文／`**`注释／`<=>`跨边／`::`节点引用／`![[]]`嵌入／`!--`节点级指令与`<**`行尾注释）；指令默认绑定／`<--`目标寻址（前向引用＋最近距离）／同key冲突裁决／白名单拦截（清单外key记`directive-unknown-key`不存储）／`directiveBindings`行索引（供写回定位）；渲染落地——`KEY_RENDERERS`语义→画法映射（7样式key×DOM/SVG双画法＋值校验防注入）、`createDirectiveRuntime`运行时（继承求值／连线样式／折叠剪枝）、行为类三key接交互层（折叠徽标点击写回文档`collapsed`指令行——持久化即文档、auto补齐节点不提供折叠，调试叠加，锁定禁点击选中＋置灰）；跳级补空节点、缺根与多根告警、同父同名合并；跨文件引用与节点引用回填、出链与入链登记；四方向布局（`TB`／`BT`／`LR`／`RL`）与三种连线样式（`line`／`curve`／`elbow`）；探索视图与全景视图双画法（两视图节点点击均走`MmsSelection`选中总线联动右栏、折叠徽标均走同一条文档写回管线、节点事件均按事件委托实现——SVG图元是一等DOM，全景视图交互按需接入）；画布工具栏两行布局（标签折叠「+N」＋节点搜索定位——全文本检索、命中循环导航、`centerOnElement`视口居中）；鼠标与触控视口；左sidebar文件面板（标签云／文件搜索／文件树／调试信息／状态卡）；右侧详情面板（正文／注释／标签／引用链／入链／出链／嵌入资源／打开源码）；vault事件防抖自动重扫；同文件标签页复用与行号定位；9项设置与防抖自动刷新；ribbon图标与3条命令。
 
 **规划**：仓库未设TODO文件，未落地能力见[CHANGELOG.md](CHANGELOG.md)「已知限制」与[docs/mms-语言规范.md](docs/mms-语言规范.md)§11.2。

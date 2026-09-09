@@ -1,8 +1,8 @@
 # API 索引
 
-> Mind Map Show (MMS) - Obsidian 思维导图插件。文档版本：v1.2（2026-09-09）
+> Mind Map Show (MMS) - Obsidian 思维导图插件。文档版本：v1.3（2026-09-10）
 
-本文档列出插件版本1.2.0用到的Obsidian官方API与插件自身API。仅记录真实用到的，不写"未来可能用到的"。
+本文档列出插件版本1.6.0用到的Obsidian官方API与插件自身API。仅记录真实用到的，不写"未来可能用到的"。
 
 ---
 
