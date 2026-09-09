@@ -10,7 +10,7 @@ import { ItemView, WorkspaceLeaf } from 'obsidian';
 import type { MmsIndex } from '../controller/refresh';
 import type { MmsSelection } from '../controller/selection';
 import type { IBacklink, IOpener, IParsedDoc } from '../host/types';
-import { RightPanel } from '../ui/right-panel';
+import { RightPanel, type IRightPanelActions } from '../ui/right-panel';
 import { el } from '../utils/dom';
 
 /** 详情视图类型标识。registerView / setViewState / getLeavesOfType 共用 */
@@ -54,7 +54,7 @@ export class MmsDetailView extends ItemView {
     root.style.inset = '0';
     container.appendChild(root);
 
-    this.rightPanel = new RightPanel(root, this.deps.opener);
+    this.rightPanel = new RightPanel(root, this.makeActions());
     this.deps.index.onUpdate(this.boundRender);
     this.deps.selection.onChange(this.boundRender);
     this.render();
@@ -70,28 +70,41 @@ export class MmsDetailView extends ItemView {
     const { filePath, nodeId } = this.deps.selection.get();
     const doc = filePath ? this.deps.index.getDoc(filePath) : undefined;
     if (!doc) {
-      this.rightPanel.renderEmpty();
+      // 有选中文件但索引找不到：文件被移动 / 重命名后索引未同步的降级提示
+      this.rightPanel.renderEmpty(filePath ? '文件已移动或索引未同步，请刷新' : undefined);
       return;
     }
     this.rightPanel.render({
       doc,
       nodeId,
-      backlinks: this.collectFileBacklinks(doc),
+      inlinks: this.collectInlinks(doc, nodeId),
+      outlinks: doc.outgoingRefs,
     });
   }
 
-  /** 全文件的反链聚合：合并各节点 incomingRefs 并按来源去重 */
-  private collectFileBacklinks(doc: IParsedDoc): IBacklink[] {
-    const seen = new Set<string>();
-    const out: IBacklink[] = [];
-    for (const node of doc.nodes) {
-      for (const link of node.incomingRefs) {
-        const key = `${link.sourcePath}::${link.sourceLine}::${link.targetNode}`;
-        if (seen.has(key)) continue;
-        seen.add(key);
-        out.push(link);
-      }
-    }
-    return out;
+  /** 入链：`<=>` 指向当前节点的全部来源；同文件来源由右栏显示为「本文件」 */
+  private collectInlinks(doc: IParsedDoc, nodeId: string | null): IBacklink[] {
+    if (!nodeId) return [];
+    const node = doc.nodeMap.get(nodeId);
+    if (!node) return [];
+    return node.incomingRefs;
+  }
+
+  /** 跳转动作：打开源码定位行号 / 打开脑图并选中节点 */
+  private makeActions(): IRightPanelActions {
+    return {
+      openSource: (filePath, lineNo) => {
+        void this.deps.opener.openSource(filePath, lineNo);
+      },
+      openAndSelect: (filePath, nodeId) => {
+        if (this.deps.selection.get().filePath === filePath) {
+          this.deps.selection.set(filePath, nodeId);
+          return;
+        }
+        void this.deps.opener.openMindMap(filePath).then(() => {
+          this.deps.selection.set(filePath, nodeId);
+        });
+      },
+    };
   }
 }

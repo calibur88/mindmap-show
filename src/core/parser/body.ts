@@ -3,13 +3,15 @@
  * @description 层级解析器。只接收剥离 Frontmatter 后的纯正文，完全不感知 Frontmatter
  */
 
-import type { ICrossRef, IMmsNode, IWarning } from '../../host/types';
-import { makeNodeId, normalizeText, parseRefTarget, shortNodeName } from '../../utils/make-key';
+import type { ICrossRef, IMmsNode, INodeRef, IWarning } from '../../host/types';
+import { makeNodeId, normalizeText, parseNodeRefTarget, parseRefTarget, shortNodeName } from '../../utils/make-key';
 import { extractEmbeds, isExternalUrlLine } from './embed';
 
 const HEADING_RE = /^(#{1,})\s+(.*)$/;
 const CHILD_RE = /^--\s+(.*)$/;
 const REF_RE = /^<=>\s*(.*)$/;
+// `::` 节点引用（点对点定位，不建边）
+const NODEREF_RE = /^::\s*(.*)$/;
 // 注释行：`** ` 后至少一个空格才合法；`**文本`（紧贴）保留为正文，避免和加粗语法歧义
 const ANNOTATION_RE = /^\*\*\s+(.*)$/;
 /** 目标列表与备注之间的分隔：Tab 或两个以上空格 */
@@ -28,6 +30,12 @@ interface PendingRef {
   label: string;
 }
 
+interface PendingNodeRef {
+  ownerId: string;
+  lineNo: number;
+  rawTarget: string;
+}
+
 /**
  * 将纯正文解析为节点树。非致命问题只写入 warnings，不抛异常
  *
@@ -44,6 +52,7 @@ export function parseBody(
   const nodeMap = new Map<string, IMmsNode>();
   const order: string[] = [];
   const pendingRefs: PendingRef[] = [];
+  const pendingNodeRefs: PendingNodeRef[] = [];
   /** pathStack[d] 保存当前路径上 depth 为 d 的节点 */
   const pathStack: IMmsNode[] = [];
 
@@ -94,6 +103,7 @@ export function parseBody(
       childIds: [],
       parentIds: [],
       crossRefs: [],
+      nodeRefs: [],
       incomingRefs: [],
       embeds: [],
       sourceFilePath: filePath,
@@ -132,6 +142,11 @@ export function parseBody(
           filler.isAutoFix = true;
           pathStack.push(filler);
         }
+      }
+
+      // 画布只从 rootId 起遍历：出现第二个根级标题时，其子树会整体不可见，必须显式告知
+      if (depth === 0 && rootId !== null) {
+        warn('no-root', 'warning', `多个根级标题：仅渲染首个根的子树，"${text}" 分支不显示`, lineNo, false);
       }
 
       const parent = depth === 0 ? null : pathStack[depth - 1] ?? null;
@@ -175,6 +190,18 @@ export function parseBody(
       continue;
     }
 
+    const nodeRef = NODEREF_RE.exec(line);
+    if (nodeRef) {
+      const raw = (nodeRef[1] ?? '').trim();
+      if (!raw) continue; // 空 `::` 无目标，静默忽略
+      if (!current) {
+        warn('missing-parent', 'warning', `节点引用 "${raw}" 没有所属节点，已忽略`, lineNo, false);
+        continue;
+      }
+      pendingNodeRefs.push({ ownerId: current.id, lineNo, rawTarget: raw });
+      continue;
+    }
+
     if (line.includes('![[')) {
       if (current) current.embeds.push(...extractEmbeds(line, lineNo));
       continue;
@@ -199,12 +226,25 @@ export function parseBody(
   }
 
   resolveRefs(pendingRefs, nodeMap, filePath, warn);
+  resolveNodeRefs(pendingNodeRefs, nodeMap, filePath);
 
   return {
     nodes: order.map((id) => nodeMap.get(id) as IMmsNode),
     nodeMap,
     rootId,
   };
+}
+
+/** 构建「节点文本 → 节点 id 列表」索引，供跨边 / 节点引用第二遍解析使用 */
+function buildTextToIds(nodeMap: Map<string, IMmsNode>): Map<string, string[]> {
+  const textToIds = new Map<string, string[]>();
+  for (const node of nodeMap.values()) {
+    if (node.isAutoFix) continue;
+    const list = textToIds.get(node.text);
+    if (list) list.push(node.id);
+    else textToIds.set(node.text, [node.id]);
+  }
+  return textToIds;
 }
 
 /**
@@ -223,13 +263,7 @@ function resolveRefs(
     autoFixed?: boolean,
   ) => void,
 ): void {
-  const textToIds = new Map<string, string[]>();
-  for (const node of nodeMap.values()) {
-    if (node.isAutoFix) continue;
-    const list = textToIds.get(node.text);
-    if (list) list.push(node.id);
-    else textToIds.set(node.text, [node.id]);
-  }
+  const textToIds = buildTextToIds(nodeMap);
 
   for (const pending of pendingRefs) {
     const owner = nodeMap.get(pending.ownerId);
@@ -276,9 +310,43 @@ function resolveRefs(
         nodeMap.get(resolvedId)?.incomingRefs.push({
           sourcePath: filePath,
           sourceLine: pending.lineNo,
-          targetNode: resolvedId,
         });
       }
     }
+  }
+}
+
+/**
+ * 第二遍扫描：解析 `::` 节点引用（点对点定位，不建边）。
+ * 同文件目标在此即时判定；跨文件目标留给索引构建器在全部文档就绪后回填。
+ * 定位失败不产生警告（引用是提示性功能，与跨边引用不同）
+ */
+function resolveNodeRefs(
+  pendingNodeRefs: readonly PendingNodeRef[],
+  nodeMap: Map<string, IMmsNode>,
+  filePath: string,
+): void {
+  const textToIds = buildTextToIds(nodeMap);
+
+  for (const pending of pendingNodeRefs) {
+    const owner = nodeMap.get(pending.ownerId);
+    if (!owner) continue;
+
+    const { filePath: refFile, nodeText } = parseNodeRefTarget(pending.rawTarget);
+    const targetFile = refFile ?? filePath;
+    let resolvedId: string | null = null;
+
+    if (targetFile === filePath) {
+      resolvedId = textToIds.get(nodeText)?.[0] ?? null;
+    }
+
+    const nodeRef: INodeRef = {
+      targetNodeId: resolvedId ?? nodeText,
+      targetFilePath: targetFile,
+      rawTarget: pending.rawTarget,
+      lineNo: pending.lineNo,
+      resolved: resolvedId !== null,
+    };
+    owner.nodeRefs.push(nodeRef);
   }
 }

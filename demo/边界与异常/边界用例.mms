@@ -1,7 +1,9 @@
 ---
-mms_tags: [边界, 测试]
+mms_name: 边界用例
+mms_tags: [示例, 边界与异常]
 mms_layout: XX
-mms_desc: mms_layout 为非法值 XX，应回退为 LR
+mms_line: ZZ
+mms_desc: mms_layout 为非法值 XX 应回退 LR，mms_line 为非法值 ZZ 应回退 line
 ---
 
 ## 没有根节点的一级节点
@@ -24,7 +26,7 @@ mms_desc: mms_layout 为非法值 XX，应回退为 LR
 
 ** 虚线指向不存在的目标，会在调试信息里记一条 missing-target
 
-<=> 用户增长脑图.mms::首单转化    跨文件引用，前向引用 OK
+<=> 综合演示/用户增长脑图.mms 首单转化    跨文件引用，前向引用 OK
 
 ** 这个引用会画一条虚线连过去，证明跨文件引用解析正确
 

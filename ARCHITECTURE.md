@@ -1,12 +1,12 @@
 # 项目整体架构
 
-> 本文是Mind Map Show（MMS）工程的权威架构说明。文档版本：v1.0（2026-09-09）
-> 插件版本：1.0.0 · 语法版本：`.mms` v1 · 最低依赖：Obsidian1.4.0 · 语言：TypeScript5.7（严格模式）
+> 本文是Mind Map Show（MMS）工程的权威架构说明。文档版本：v1.2（2026-09-09）
+> 插件版本：1.1.0 · 语法版本：`.mms` v1 · 最低依赖：Obsidian1.4.0 · 语言：TypeScript5.7（严格模式）
 
 ## 1. 项目定位
 
 1. **host层**：定义跨层接口并适配Obsidian，是`import 'obsidian'`的唯一合法位置（另含`main.ts`与`views/`）；
-2. **core层**：解析`.mms`文本、计算布局、构建跨文件引用与反链索引，纯逻辑、零宿主依赖、可单测；
+2. **core层**：解析`.mms`文本、计算布局、解析跨文件引用并登记入链/出链，纯逻辑、零宿主依赖、可单测；
 3. **controller层**：持有全局索引与刷新流水线、选中态总线，跨视图共享一份解析结果；
 4. **render层**：把`IParsedDoc`＋`MmsSettings`翻译成DOM或SVG，不含任何业务判断；
 5. **ui层**：左栏、右栏、状态卡三个面板控件，只做DOM拼装与事件转发；
@@ -14,10 +14,10 @@
 
 核心设计原则：
 
-- **单一类型出口**：全部interface／type集中在`src/host/types.ts`，其他文件禁止散落类型声明；
+- **单一类型出口**：跨层共享的interface／type集中在`src/host/types.ts`；仅模块内部使用的类型可就地声明，但不得跨层导出；
 - **零宿主依赖**：`core/`与`render/`不得出现`import 'obsidian'`，宿主能力一律由接口注入；
 - **纯函数渲染**：`render*`函数只依赖入参产出`DocumentFragment`／`SVGElement`，同输入必得同输出；
-- **单向依赖**：`main → views → ui → render → controller → core → host/types`，任何层不得反向依赖；
+- **单向依赖**：`main → views → ui → render → controller → core → host/types`，任何层不得反向依赖（唯一例外：`views/settings-tab`以`import type`引用`main`的插件类型，纯类型无运行时依赖）；
 - **设置即偏好**：`MmsSettings`只存展示偏好，不存任何业务数据，解析结果永不落盘。
 
 ## 2. 工程结构
@@ -34,7 +34,7 @@ mindmap-show/
 │  ├─ views/                FileView／ItemView／设置面板
 │  ├─ settings/             设置schema与默认值
 │  └─ utils/                DOM工具与键值构造
-├─ demo/                    入库示例库（8个.mms）
+├─ demo/                    入库示例库（按功能用例分目录，15个.mms）
 ├─ docs/                    .mms语言规范
 ├─ styles.css               全部样式集中一处
 ├─ manifest.json            插件清单
@@ -47,7 +47,7 @@ mindmap-show/
 
 | 目录 | 用途 | 是否入库 |
 |---|---|---|
-| `demo/` | 随仓库提交的示例素材库，供功能验收与语法演示 | 是 |
+| `demo/` | 随仓库提交的示例素材库，按功能用例分目录，供功能验收与语法演示 | 是 |
 | `test-vault-local/` | 本地Obsidian测试vault，`local`后缀表示本地专用 | 否 |
 | `dist/` | `npm run build`产出的发布包 | 否 |
 | `test-vault-local/.obsidian/plugins/mindmap-show/` | `dev`／`once`产物的落地目录，Obsidian直接加载这里 | 否 |
@@ -59,29 +59,28 @@ main.ts                      装配：new适配器 → new索引 → registerVie
  ├─ host/types.ts            唯一类型出口（IMmsNode／IParsedDoc／IWarning／IOpener／IUiHost…）
  ├─ host/obsidian/
  │   ├─ vault.ts             列目录与读文件（IVaultHost）
- │   ├─ meta.ts              反链索引登记（IMetaHost）
- │   ├─ opener.ts            打开脑图／源码／外链（IOpener）
+ │   ├─ opener.ts            打开脑图／源码／外链（IOpener，同文件复用标签页）
  │   ├─ ui-host.ts           状态广播与提示（IUiHost）
  │   └─ obsidian-internal.d.ts  未进typings的运行时API的类型增强
  ├─ core/
- │   ├─ frontmatter.ts       四个固定键解析与非法值回退
+ │   ├─ frontmatter.ts       五个固定键解析与非法值回退
  │   ├─ parser/
  │   │   ├─ index.ts         解析入口：frontmatter → body → 结果装配
  │   │   ├─ body.ts          标题／子节点／正文／注释／跨边分流
  │   │   └─ embed.ts         `![[]]`按扩展名与协议分流
- │   ├─ index-builder.ts     跨文件引用解析与反链索引构建
- │   └─ layout/index.ts      文字测量 → 矩形尺寸 → tidy tree布局
+ │   ├─ index-builder.ts     跨文件引用解析与出链聚合
+ │   └─ layout/index.ts      文字测量 → 矩形尺寸 → tidy tree布局（四方向）
  ├─ controller/
  │   ├─ refresh.ts           MmsIndex：刷新流水线与全局索引
  │   └─ selection.ts         MmsSelection：当前文件＋选中节点总线
  ├─ render/
  │   ├─ dom/index.ts         探索视图（DocumentFragment）
  │   ├─ svg/index.ts         全景视图（SVGElement）
- │   ├─ shared/edges.ts      两种视图共用的连线SVG
+ │   ├─ shared/edges.ts      两种视图共用的连线路径（line／curve）
  │   └─ canvas-viewport.ts   鼠标／触控视口与缩放
  ├─ ui/
- │   ├─ left-panel.ts        标签云＋文件树＋调试信息＋状态卡
- │   ├─ right-panel.ts       节点详情／注释／嵌入／反链
+ │   ├─ left-panel.ts        标签云＋搜索栏＋文件树＋调试信息＋状态卡
+ │   ├─ right-panel.ts       节点详情／注释／标签／引用链（`<=>`＋`::`）／入链（含本文件）／出链（文件级）
  │   └─ status-card.ts       底部操作条：刷新＋查看详情
  ├─ views/
  │   ├─ mms-view.ts          FileView，接管`.mms`扩展名
@@ -93,7 +92,7 @@ main.ts                      装配：new适配器 → new索引 → registerVie
  │   └─ defaults.ts          默认值
  └─ utils/
      ├─ dom.ts               `el()`元素构造
-     └─ make-key.ts          反链键构造
+     └─ make-key.ts          节点id／反链键构造，`<=>`与`::`目标解析
 ```
 
 分层依赖（单向，不得反向依赖）：
@@ -110,7 +109,7 @@ main ──► views ──► ui ──► render ──► controller ──�
 
 | 层 | 约束 |
 |---|---|
-| `host/types` | 零依赖；是interface／type的唯一声明位置 |
+| `host/types` | 零依赖；是跨层共享interface／type的唯一声明位置（模块私有类型可就地声明） |
 | `host/obsidian` | 仅依赖`host/types`与`obsidian`；未文档化的运行时API必须加`typeof`守卫 |
 | `core` | 禁止`import 'obsidian'`；禁止直接访问DOM；函数保持纯度以便单测 |
 | `render` | 禁止业务逻辑与状态；只接收`IParsedDoc`＋渲染选项 |
@@ -125,28 +124,55 @@ main ──► views ──► ui ──► render ──► controller ──�
 - 视图类型常量形如`MMS_VIEW_TYPE`，与`registerView`／`getLeavesOfType`共用；
 - 样式类统一`mms-`前缀，状态类用`is-active`／`state-error`形式。
 
+### 布局与连线
+
+布局方向由 frontmatter 的 `mms_layout` 逐文件指定，一律以**父节点 → 子节点**的流向为准：
+
+| 关键字 | 布局类型 | 流向 | 主轴 | 子节点展开轴 |
+|---|---|---|---|---|
+| `TB` | 垂直 | 父在上，子向下展开 | Y 轴向下 | X 轴 |
+| `BT` | 垂直 | 父在下，子向上展开 | Y 轴向上（翻转） | X 轴 |
+| `LR` | 水平 | 父在左，子向右展开 | X 轴向右 | Y 轴 |
+| `RL` | 水平 | 父在右，子向左展开 | X 轴向左（翻转） | Y 轴 |
+
+- 布局只算坐标，不画连线：先递归测子树在交叉轴上的占位，再按层推进主轴偏移；
+- `BT`／`RL` 是 `TB`／`LR` 的主轴镜像，节点尺寸与交叉轴坐标完全一致，只有主轴坐标翻转；
+- 连线由 `render/shared/edges.ts` 单独计算，锚点取父子相对那条边的中点；
+- `mms_line` 取 `line` 时线性插值，取 `curve` 时按安全推力推导控制点（公式见[API.md](API.md)§3.3）；
+- 曲线推力受三处约束：安全推力上限、正对直连补偿、极限陡坡增压，保证不出现回环与尖刺。
+
 ### 数据流
 
 刷新流水线（`MmsIndex.refresh`）：
 
 ```
-listMmsFiles → readFile → parseMms → resolveCrossFileRefs → buildBacklinkIndex
-   → docs／index落库 → metaHost.setBacklinkIndex → uiHost.setStatus
+listMmsFiles → readFile → parseMms → resolveCrossFileRefs（回填 crossRefs 与目标 incomingRefs）
+   → resolveCrossFileNodeRefs → buildOutgoingRefs → docs落库 → uiHost.setStatus
    → onUpdate广播 → MmsSideView.render ／ MmsView.renderAll ／ MmsDetailView
 ```
 
 设置变更链路（400毫秒防抖）：
 
 ```
-设置面板 onChange → MmsPlugin.updateSettings → saveData落盘
-   → 防抖窗口结束 → onSettingsChange广播 → 各视图按新值重绘
+设置面板 onChange → MmsPlugin.updateSettings → 内存合并
+   → 防抖窗口结束 → saveData落盘 → onSettingsChange广播 → 各视图按新值重绘
    → MmsIndex.refresh() 整库重扫 → onUpdate广播 → 三视图最终一致
+```
+
+vault 事件链路（500毫秒防抖）：
+
+```
+.mms 编辑／重命名／删除 → vault.on 事件 → MmsIndex.refresh() 整库重扫
+   → onUpdate广播 → 三视图同步；文件移动后旧路径的 getDoc 未命中，
+     画布与右栏显示「文件已移动或索引未同步」降级提示
 ```
 
 节点选中链路：
 
 ```
-画布点击节点 → MmsSelection.set(文件路径, 节点id) → 订阅者回调 → 右栏渲染节点详情
+画布点击节点 → MmsSelection.set(文件路径, 节点id) → 订阅者回调
+   → 右栏渲染节点详情 + 画布高亮该节点（data-node-id 匹配）
+   （右栏「跳转」反向选中时同样触发画布高亮）
 ```
 
 状态存放说明：
@@ -163,7 +189,7 @@ npm run dev                                             # watch构建，直出�
 node esbuild.config.mjs once                            # 单次构建，同上目录
 npm run build                                           # tsc --noEmit + 产出dist/
 npx tsc --noEmit                                        # 严格模式类型检查
-npx vitest run                                          # 51例单测
+npx vitest run                                          # 95例单测
 ```
 
 - 构建流程：入口`src/main.ts` → esbuild打包为单文件`main.js` → 连同`manifest.json`与`styles.css`复制到输出目录；输出目录优先级为环境变量`MMS_OUT_DIR`＞`production`时的`dist/`＞其他情况的测试vault插件目录；
@@ -174,11 +200,13 @@ npx vitest run                                          # 51例单测
 
 | 套件 | 领域 | 例数 |
 |---|---|---|
-| `src/core/frontmatter.test.ts` | frontmatter四个固定键与非法值回退 | 8 |
-| `src/core/parser/parser.test.ts` | 节点层级、正文、注释、跨边、嵌入 | 22 |
-| `src/core/parser/demo.test.ts` | 真实示例冒烟与布局算法 | 15 |
-| `src/core/index-builder.test.ts` | 跨文件引用解析与反链索引 | 6 |
-| 合计 | — | 51 |
+| `src/core/frontmatter.test.ts` | frontmatter五个固定键与非法值回退 | 10 |
+| `src/core/parser/parser.test.ts` | 节点层级、正文、注释、跨边、节点引用、嵌入 | 26 |
+| `src/core/parser/demo.test.ts` | 按 `demo/` 目录分组的真实素材冒烟与布局算法 | 35 |
+| `src/core/index-builder.test.ts` | 跨文件引用解析、节点引用解析与出链聚合 | 8 |
+| `src/core/layout/layout.test.ts` | 四方向布局的主轴推进与翻转 | 5 |
+| `src/render/shared/edges.test.ts` | 连线锚点、直线／折线插值与曲线安全推力 | 12 |
+| 合计 | — | 96 |
 
 ## 5. 文档索引
 
@@ -193,6 +221,6 @@ npx vitest run                                          # 51例单测
 
 ## 6. 现状
 
-**已实现**：`.mms`语法v1全量解析（frontmatter／标题节点／`--`子节点／正文／`**`注释／`<=>`跨边／`![[]]`嵌入）；跳级补空节点、缺根降级、同父同名合并；跨文件引用与反链索引；探索视图与全景视图双画法；鼠标与触控视口；左sidebar文件面板（标签云／文件树／调试信息／状态卡）；右侧详情面板（正文／注释／嵌入／反链／打开源码）；9项设置与防抖自动刷新；ribbon图标与3条命令。
+**已实现**：`.mms`语法v1全量解析（frontmatter／标题节点／`--`子节点／正文／`**`注释／`<=>`跨边／`::`节点引用／`![[]]`嵌入）；跳级补空节点、缺根与多根告警、同父同名合并；跨文件引用与节点引用回填、出链与入链登记；四方向布局（`TB`／`BT`／`LR`／`RL`）与三种连线样式（`line`／`curve`／`elbow`）；探索视图与全景视图双画法；鼠标与触控视口；左sidebar文件面板（标签云／文件搜索／文件树／调试信息／状态卡）；右侧详情面板（正文／注释／标签／引用链／入链／出链／嵌入资源／打开源码）；vault事件防抖自动重扫；同文件标签页复用与行号定位；9项设置与防抖自动刷新；ribbon图标与3条命令。
 
 **规划**：仓库未设TODO文件，未落地能力见[CHANGELOG.md](CHANGELOG.md)「已知限制」与[docs/mms-语言规范.md](docs/mms-语言规范.md)§10.2。

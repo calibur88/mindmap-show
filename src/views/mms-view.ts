@@ -7,7 +7,7 @@
  */
 
 import { FileView, TFile, WorkspaceLeaf } from 'obsidian';
-import type { IOpener, IUiHost, IParsedDoc } from '../host/types';
+import type { IOpener, IUiHost, IParsedDoc, UiStatus } from '../host/types';
 import type { MmsIndex } from '../controller/refresh';
 import type { MmsSelection } from '../controller/selection';
 import type { MmsSettings } from '../settings/schema';
@@ -46,6 +46,10 @@ export class MmsView extends FileView {
 
   private readonly boundRenderAll = (): void => this.renderAll();
   private readonly boundSettingsChange = (): void => this.applySettings();
+  private readonly boundSelectionChange = (): void => this.updateHighlight();
+  private readonly boundStatusChange = (state: UiStatus, detail?: string): void => {
+    this.updateFooter(detail ?? this.deps.uiHost.getLastDetail());
+  };
   private unsubscribeSettings: (() => void) | null = null;
 
   constructor(leaf: WorkspaceLeaf, private deps: IMmsViewDeps) {
@@ -64,6 +68,9 @@ export class MmsView extends FileView {
     this.buildShell();
     this.deps.index.onUpdate(this.boundRenderAll);
     this.unsubscribeSettings = this.deps.onSettingsChange(this.boundSettingsChange);
+    // footer 实时反映刷新状态；画布高亮跟随选中总线（含右栏反向选中）
+    this.deps.uiHost.onStatus(this.boundStatusChange);
+    this.deps.selection.onChange(this.boundSelectionChange);
   }
 
   async onLoadFile(file: TFile): Promise<void> {
@@ -80,6 +87,8 @@ export class MmsView extends FileView {
     this.deps.index.offUpdate(this.boundRenderAll);
     this.unsubscribeSettings?.();
     this.unsubscribeSettings = null;
+    this.deps.uiHost.offStatus(this.boundStatusChange);
+    this.deps.selection.offChange(this.boundSelectionChange);
     this.viewport.detach();
   }
 
@@ -155,7 +164,14 @@ export class MmsView extends FileView {
     const doc = this.currentDoc();
     if (!doc) {
       body.empty();
-      body.appendChild(el('div', { cls: 'mms-empty-hint', text: '未打开 .mms 文件，或点左栏「刷新」按钮扫描全部 mms' }));
+      body.appendChild(
+        el('div', {
+          cls: 'mms-empty-hint',
+          text: this.currentPath
+            ? '文件已移动或索引未同步，点左栏「刷新」按钮重扫'
+            : '未打开 .mms 文件，或点左栏「刷新」按钮扫描全部 mms',
+        }),
+      );
       return;
     }
 
@@ -168,6 +184,7 @@ export class MmsView extends FileView {
         ? renderPanorama(doc, {
             lineWidth: settings.panoramaLineWidth,
             crossLineWidth: settings.crossLineWidth,
+            lineStyle: doc.lineStyle,
             nodeGap: settings.panoramaNodeGap,
             levelGap: settings.panoramaLevelGap,
             onNodeClick: (nodeId) => this.selectNode(nodeId),
@@ -175,6 +192,7 @@ export class MmsView extends FileView {
         : renderExplore(doc, {
             lineWidth: settings.exploreLineWidth,
             crossLineWidth: settings.crossLineWidth,
+            lineStyle: doc.lineStyle,
             nodeGap: settings.exploreNodeGap,
             levelGap: settings.exploreLevelGap,
             onNodeClick: (nodeId) => this.selectNode(nodeId),
@@ -187,14 +205,31 @@ export class MmsView extends FileView {
     body.appendChild(holder);
     this.viewport.attach(body, holder);
 
-    if (this.footerEl) {
-      this.footerEl.empty();
-      this.footerEl.appendChild(el('span', { text: this.deps.uiHost.getLastDetail() }));
-    }
+    this.updateFooter();
+    this.updateHighlight();
   }
 
   private selectNode(nodeId: string): void {
     this.deps.selection.set(this.currentPath, nodeId);
+  }
+
+  /** 画布 footer 显示最近一次刷新状态，uiHost 广播时实时更新 */
+  private updateFooter(detail?: string): void {
+    if (!this.footerEl) return;
+    this.footerEl.empty();
+    this.footerEl.appendChild(el('span', { text: detail ?? this.deps.uiHost.getLastDetail() }));
+  }
+
+  /** 按选中总线给画布节点加高亮。渲染后与 selection 变更（含右栏跳转）时都会调用 */
+  private updateHighlight(): void {
+    if (!this.canvasBody) return;
+    const { filePath, nodeId } = this.deps.selection.get();
+    // 选中态属于别的文件时清空本画布高亮
+    const active = filePath === this.currentPath ? nodeId : null;
+    // 探索视图是 HTMLElement、全景视图是 SVG <g>，统一按 Element 处理
+    this.canvasBody.querySelectorAll<Element>('[data-node-id]').forEach((node) => {
+      node.classList.toggle('is-selected', !!active && node.getAttribute('data-node-id') === active);
+    });
   }
 
   private currentDoc(): IParsedDoc | undefined {

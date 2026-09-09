@@ -6,16 +6,12 @@
 import type { ILayoutResult, IMmsNode, IParsedDoc } from '../../host/types';
 import { layoutTree } from '../../core/layout';
 import { el } from '../../utils/dom';
-import { buildEdgesSvg } from '../shared/edges';
+import { buildEdgesSvg, type ILineRenderOptions } from '../shared/edges';
 
-export interface ExploreRenderOptions {
-  /** 树边线宽（像素），从 settings 传入 */
-  lineWidth: number;
-  /** 跨文件引用虚线线宽（像素） */
-  crossLineWidth: number;
+export interface ExploreRenderOptions extends ILineRenderOptions {
   /** 子节点之间间距（像素） */
   nodeGap: number;
-  /** 层级之间间距（像素） */
+  /** 层级之间间距（像素），同时作为曲线模式的安全推力上限 `H0` */
   levelGap: number;
   /** 节点点击回调，未传时节点不可点 */
   onNodeClick?: (nodeId: string) => void;
@@ -85,7 +81,15 @@ export function renderExplore(doc: IParsedDoc, options: ExploreRenderOptions): D
   canvas.style.width = `${width}px`;
   canvas.style.height = `${height}px`;
 
-  const edges = buildEdgesSvg(layout, doc.layout, width, height, options.lineWidth, options.crossLineWidth);
+  const edges = buildEdgesSvg(layout, {
+    direction: doc.layout,
+    lineStyle: options.lineStyle,
+    gap: options.levelGap,
+    width,
+    height,
+    treeLineWidth: options.lineWidth,
+    crossLineWidth: options.crossLineWidth,
+  });
   edges.style.position = 'absolute';
   edges.style.left = '0';
   edges.style.top = '0';

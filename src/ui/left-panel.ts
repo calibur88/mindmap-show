@@ -35,11 +35,17 @@ const ALL_TAG = '__all__';
 export class LeftPanel {
   private rootEl: HTMLElement;
   private tagBox: HTMLElement;
+  private searchInput: HTMLInputElement;
   private treeBox: HTMLElement;
   private warnBox: HTMLElement;
   private warnSection: HTMLElement;
+  private statusCard: StatusCard;
   /** 文件夹折叠状态，键是文件夹路径（「/」= 根），重启后默认全展开 */
   private readonly collapsedFolders: Set<string> = new Set();
+  /** 当前生效的搜索关键词，空串表示不过滤 */
+  private keyword = '';
+  /** 最近一次全量快照，供搜索 / 清空只重绘文件树，避免整栏重建 */
+  private snapshot: IScanSnapshot | null = null;
 
   constructor(
     container: HTMLElement,
@@ -65,6 +71,44 @@ export class LeftPanel {
     tagSection.appendChild(this.tagBox);
     this.rootEl.appendChild(tagSection);
 
+    // ---------------------- 文件搜索工具栏 ----------------------
+    const searchSection = el('div', { cls: 'mms-section mms-section-search' });
+    const searchBar = el('div', { cls: 'mms-search-bar' });
+    this.searchInput = el('input', {
+      cls: 'mms-search-input',
+      attr: { type: 'search', placeholder: '搜索文件名，回车确认' },
+    });
+    this.searchInput.addEventListener('keydown', (event) => {
+      if (event.key !== 'Enter') return;
+      event.preventDefault();
+      this.applySearch();
+    });
+    // 原生 type=search 的清空（×）按钮只派发 search 事件：空值时走清空逻辑
+    this.searchInput.addEventListener('search', () => {
+      if (this.searchInput.value.trim() === '') this.clearSearch();
+      else this.applySearch();
+    });
+    searchBar.appendChild(this.searchInput);
+
+    const actionBox = el('div', { cls: 'mms-search-actions' });
+    const doSearch = el('button', {
+      cls: 'mms-search-btn mms-search-go',
+      text: '搜索',
+      attr: { type: 'button' },
+    });
+    doSearch.addEventListener('click', () => this.applySearch());
+    const doClear = el('button', {
+      cls: 'mms-search-btn',
+      text: '清空',
+      attr: { type: 'button' },
+    });
+    doClear.addEventListener('click', () => this.clearSearch());
+    actionBox.appendChild(doSearch);
+    actionBox.appendChild(doClear);
+    searchBar.appendChild(actionBox);
+    searchSection.appendChild(searchBar);
+    this.rootEl.appendChild(searchSection);
+
     const treeSection = el('div', { cls: 'mms-section mms-section-tree' });
     treeSection.appendChild(el('div', { cls: 'mms-section-title', text: '文件浏览器' }));
     this.treeBox = el('div', { cls: 'mms-file-tree mms-scroll' });
@@ -77,13 +121,48 @@ export class LeftPanel {
     this.warnSection.appendChild(this.warnBox);
     this.rootEl.appendChild(this.warnSection);
 
-    new StatusCard(this.rootEl, uiHost, onRefresh, openDetailPanel);
+    this.statusCard = new StatusCard(this.rootEl, uiHost, onRefresh, openDetailPanel);
+  }
+
+  /** 注销状态卡监听并移除整栏 DOM。侧栏视图 onClose 必须调用 */
+  destroy(): void {
+    this.statusCard.destroy();
+    this.rootEl.remove();
   }
 
   render(snapshot: IScanSnapshot, showWarnings: boolean): void {
+    this.snapshot = snapshot;
     this.renderTags(snapshot);
     this.renderTree(snapshot);
     this.renderWarnings(snapshot, showWarnings);
+  }
+
+  /**
+   * 执行搜索：只在当前标签分组内按文件名过滤。
+   * 输入框为空时忽略本次操作——不刷新、不报错。
+   * 搜索意味着用户想看到全部匹配：同时展开所有文件夹，避免折叠目录吞掉结果
+   */
+  private applySearch(): void {
+    const raw = this.searchInput.value.trim();
+    if (!raw) return;
+    this.keyword = raw;
+    this.collapsedFolders.clear();
+    this.renderTreeOnly();
+  }
+
+  /**
+   * 清空：撤销关键词过滤，回退到当前标签分组的默认视图。
+   * 关键词已经是空串时只清输入框，不触发列表刷新
+   */
+  private clearSearch(): void {
+    this.searchInput.value = '';
+    if (this.keyword === '') return;
+    this.keyword = '';
+    this.renderTreeOnly();
+  }
+
+  private renderTreeOnly(): void {
+    if (this.snapshot) this.renderTree(this.snapshot);
   }
 
   private renderTags(snapshot: IScanSnapshot): void {
@@ -97,19 +176,33 @@ export class LeftPanel {
         text: isAll ? '全部' : tag.name,
       });
       item.appendChild(el('span', { cls: 'mms-tag-count', text: `(${tag.count})` }));
-      item.addEventListener('click', () => this.onSelectTag(isAll ? null : tag.name));
+      item.addEventListener('click', () => this.handleSelectTag(isAll ? null : tag.name));
       this.tagBox.appendChild(item);
     }
   }
 
+  /** 切换标签分组时同步清空搜索，避免旧关键词继续隐式过滤新分组 */
+  private handleSelectTag(tag: string | null): void {
+    this.searchInput.value = '';
+    this.keyword = '';
+    this.onSelectTag(tag);
+  }
+
   private renderTree(snapshot: IScanSnapshot): void {
     this.treeBox.empty();
-    const visible = snapshot.activeTag
+    const inTag = snapshot.activeTag
       ? snapshot.files.filter((file) => file.tags.includes(snapshot.activeTag as string))
       : snapshot.files;
+    // 搜索只在当前标签分组内按文件名（不含路径、忽略大小写）过滤
+    const visible = this.keyword
+      ? inTag.filter((file) => file.name.toLowerCase().includes(this.keyword.toLowerCase()))
+      : inTag;
 
     if (visible.length === 0) {
-      this.treeBox.appendChild(el('div', { cls: 'mms-empty-hint', text: '没有匹配的 .mms 文件' }));
+      this.treeBox.appendChild(el('div', {
+        cls: 'mms-empty-hint',
+        text: this.keyword ? `当前标签分组内没有匹配「${this.keyword}」的文件` : '没有匹配的 .mms 文件',
+      }));
       return;
     }
 

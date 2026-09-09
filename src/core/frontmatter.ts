@@ -3,8 +3,8 @@
  * @description .mms 文件 Frontmatter 的唯一剥离实现。纯字符串操作，无宿主依赖
  */
 
-import type { MmsFrontmatter, MmsLayout } from '../host/types';
-import { DEFAULT_LAYOUT } from '../utils/make-key';
+import type { MmsFrontmatter, MmsLayout, MmsLineStyle } from '../host/types';
+import { DEFAULT_LAYOUT, DEFAULT_LINE_STYLE } from '../utils/make-key';
 
 export interface SplitResult {
   frontmatter: MmsFrontmatter | null;
@@ -14,7 +14,9 @@ export interface SplitResult {
   bodyStartLine: number;
 }
 
-const VALID_LAYOUTS: readonly MmsLayout[] = ['LR', 'TB', 'RL'];
+const VALID_LAYOUTS: readonly MmsLayout[] = ['TB', 'BT', 'LR', 'RL'];
+
+const VALID_LINE_STYLES: readonly MmsLineStyle[] = ['line', 'curve', 'elbow'];
 
 /**
  * 去掉行尾的行内注释。
@@ -78,6 +80,14 @@ export function splitFrontmatter(content: string): SplitResult {
     }
   }
 
+  const lineMatch = rawFm.match(/^mms_line:\s*(.*)/mi);
+  if (lineMatch) {
+    const value = stripInlineComment(lineMatch[1]).toLowerCase();
+    if (VALID_LINE_STYLES.includes(value as MmsLineStyle)) {
+      result.mms_line = value as MmsLineStyle;
+    }
+  }
+
   const descMatch = rawFm.match(/^mms_desc:\s*(.*)/mi);
   if (descMatch) result.mms_desc = stripInlineComment(descMatch[1]);
 
@@ -91,4 +101,9 @@ export function splitFrontmatter(content: string): SplitResult {
 /** 取生效的布局方向，frontmatter 缺失或非法时回退默认值 */
 export function resolveLayout(frontmatter: MmsFrontmatter | null): MmsLayout {
   return frontmatter?.mms_layout ?? DEFAULT_LAYOUT;
+}
+
+/** 取生效的连线样式，frontmatter 缺失或非法时回退 `line` */
+export function resolveLineStyle(frontmatter: MmsFrontmatter | null): MmsLineStyle {
+  return frontmatter?.mms_line ?? DEFAULT_LINE_STYLE;
 }

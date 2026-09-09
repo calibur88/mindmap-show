@@ -4,22 +4,13 @@
  */
 
 import type {
-  BacklinkIndex,
-  IBacklink,
-  IMetaHost,
   IParsedDoc,
   IUiHost,
   IVaultHost,
   IWarning,
 } from '../host/types';
-import { buildBacklinkIndex, resolveCrossFileRefs } from '../core/index-builder';
+import { buildOutgoingRefs, resolveCrossFileNodeRefs, resolveCrossFileRefs } from '../core/index-builder';
 import { parseMms } from '../core/parser';
-import { makeBacklinkKey } from '../utils/make-key';
-
-const EMPTY_INDEX: BacklinkIndex = {
-  get: () => undefined,
-  getAll: () => new Map(),
-};
 
 /** 左栏需要的每个文件摘要 */
 export interface IFileSummary {
@@ -32,18 +23,16 @@ export interface IFileSummary {
 /** 全局索引。唯一持有全部解析结果的地方 */
 export class MmsIndex {
   private docs: IParsedDoc[] = [];
-  private index: BacklinkIndex = EMPTY_INDEX;
   private listeners: (() => void)[] = [];
   /** 并发守卫：多次连续调用复用同一个 promise，避免启动 + 视图挂载时双扫 */
   private inflight: Promise<void> | null = null;
 
   constructor(
     private vaultHost: IVaultHost,
-    private metaHost: IMetaHost,
     private uiHost: IUiHost,
   ) {}
 
-  /** 完整刷新流水线：扫描 → 解析 → 跨文件引用 → 反链索引 */
+  /** 完整刷新流水线：扫描 → 解析 → 跨文件引用与节点引用 → 出链聚合 */
   async refresh(): Promise<void> {
     if (this.inflight) return this.inflight;
     this.inflight = (async () => {
@@ -59,14 +48,23 @@ export class MmsIndex {
           warnings.push(...doc.warnings);
         }
         resolveCrossFileRefs(docs, warnings);
+        resolveCrossFileNodeRefs(docs);
+        buildOutgoingRefs(docs);
         this.docs = docs;
-        this.index = buildBacklinkIndex(docs);
-        this.metaHost.setBacklinkIndex(this.index);
         this.uiHost.setStatus('synced', `已同步 ${docs.length} 个文件`);
       } catch (error) {
+        // 状态卡文案指向控制台，这里必须真的留下错误日志
+        console.error('[MMS] 刷新失败:', error);
         this.uiHost.setStatus('error', error instanceof Error ? error.message : String(error));
       }
-      for (const listener of this.listeners) listener();
+      for (const listener of [...this.listeners]) {
+        try {
+          listener();
+        } catch (error) {
+          // 单个视图渲染异常不应中断其余视图的刷新
+          console.error('[MMS] 索引监听器执行失败:', error);
+        }
+      }
     })();
     try {
       await this.inflight;
@@ -122,9 +120,5 @@ export class MmsIndex {
     return [...counter.entries()]
       .map(([name, count]) => ({ name, count }))
       .sort((a, b) => b.count - a.count);
-  }
-
-  getBacklinks(nodeId: string, filePath: string): IBacklink[] {
-    return this.index.get(makeBacklinkKey(filePath, nodeId)) ?? [];
   }
 }

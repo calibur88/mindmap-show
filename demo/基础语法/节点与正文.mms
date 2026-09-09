@@ -1,6 +1,8 @@
 ---
-mms_tags: [产品, 研究]
+mms_name: 节点与正文
+mms_tags: [示例, 基础语法]
 mms_layout: TB
+mms_desc: 标题节点定层级，普通行是 content，`** ` 开头的是 annotation
 ---
 
 # 用户研究

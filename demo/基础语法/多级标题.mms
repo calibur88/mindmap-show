@@ -1,6 +1,8 @@
 ---
-mms_tags: [产品, 规划]
+mms_name: 多级标题
+mms_tags: [示例, 基础语法]
 mms_layout: LR
+mms_desc: `#` 个数决定层级，无 H6 上限；注释常驻右栏，画布默认不渲染
 ---
 
 # 功能规划

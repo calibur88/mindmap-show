@@ -1,6 +1,6 @@
 ---
 mms_name: 用户增长脑图
-mms_tags: 任务, 进度
+mms_tags: [示例, 综合演示]
 mms_layout: LR
 mms_desc: 裂变核心入口，后续需配合会员体系做二次转化
 ---

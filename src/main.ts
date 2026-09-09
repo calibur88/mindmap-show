@@ -1,12 +1,11 @@
 /**
  * @module main
- * @description MMS 插件装配层：唯一 import 'obsidian' 的入口
+ * @description 插件入口。只做装配：宿主适配器 → 索引/选中总线 → 视图注册 → 命令/ribbon
  */
 
-import { Plugin } from 'obsidian';
+import { Plugin, TFile } from 'obsidian';
 import { MmsIndex } from './controller/refresh';
 import { MmsSelection } from './controller/selection';
-import { ObsidianMetaHost } from './host/obsidian/meta';
 import { ObsidianOpener } from './host/obsidian/opener';
 import { ObsidianUiHost } from './host/obsidian/ui-host';
 import { ObsidianVaultHost } from './host/obsidian/vault';
@@ -17,70 +16,111 @@ import { MMS_VIEW_TYPE, MmsView } from './views/mms-view';
 import { MMS_SIDE_VIEW_TYPE, MmsSideView } from './views/side-view';
 import { MmsSettingTab } from './views/settings-tab';
 
-/** 插件设置落盘后的防抖窗口（毫秒）。数字输入框每敲一次键都会落盘，避免逐字重扫全库 */
 const SETTINGS_DEBOUNCE_MS = 400;
+/** vault 事件（编辑/重命名/删除）触发重扫的防抖窗口 */
+const VAULT_RESCAN_DEBOUNCE_MS = 500;
 
-/** Mind Map Show 插件主体。只负责装配，业务逻辑一律下沉到 core / controller */
 export default class MmsPlugin extends Plugin {
   settings: MmsSettings = { ...DEFAULT_SETTINGS };
 
   private index: MmsIndex | null = null;
   private readonly settingsListeners: (() => void)[] = [];
   private settingsTimer: number | null = null;
+  /** 防抖窗口内尚有未落盘的设置变更 */
+  private settingsDirty = false;
+  private vaultTimer: number | null = null;
+  private detailAutoOpened = false;
 
   async onload(): Promise<void> {
     await this.loadSettings();
 
     const vaultHost = new ObsidianVaultHost(this.app);
-    const metaHost = new ObsidianMetaHost();
-    const opener = new ObsidianOpener(this.app);
+    // 视图类型常量由 main 注入，host 层不反向依赖 views 层
+    const opener = new ObsidianOpener(this.app, MMS_VIEW_TYPE);
     const uiHost = new ObsidianUiHost();
-    const index = new MmsIndex(vaultHost, metaHost, uiHost);
+    const index = new MmsIndex(vaultHost, uiHost);
     const selection = new MmsSelection();
     this.index = index;
 
-    this.registerView(MMS_VIEW_TYPE, (leaf) => new MmsView(leaf, {
-      index,
-      opener,
-      uiHost,
-      selection,
-      getSettings: () => this.settings,
-      ensureDetailLeaf: () => this.ensureDetailLeaf(),
-      onSettingsChange: (fn) => this.onSettingsChange(fn),
-    }));
-    this.registerView(MMS_DETAIL_VIEW_TYPE, (leaf) => new MmsDetailView(leaf, {
-      index,
-      opener,
-      selection,
-    }));
-    this.registerView(MMS_SIDE_VIEW_TYPE, (leaf) => new MmsSideView(leaf, {
-      index,
-      opener,
-      uiHost,
-      getSettings: () => this.settings,
-      onSettingsChange: (fn) => this.onSettingsChange(fn),
-      openDetailPanel: () => void this.openDetailPanel(),
-    }));
+    this.registerView(
+      MMS_VIEW_TYPE,
+      (leaf) =>
+        new MmsView(leaf, {
+          index,
+          opener,
+          uiHost,
+          selection,
+          getSettings: () => this.settings,
+          ensureDetailLeaf: () => this.ensureDetailLeaf(),
+          onSettingsChange: (fn) => this.onSettingsChange(fn),
+        }),
+    );
+    this.registerView(
+      MMS_SIDE_VIEW_TYPE,
+      (leaf) =>
+        new MmsSideView(leaf, {
+          index,
+          opener,
+          uiHost,
+          getSettings: () => this.settings,
+          onSettingsChange: (fn) => this.onSettingsChange(fn),
+          openDetailPanel: () => void this.openDetailPanel(),
+        }),
+    );
+    this.registerView(
+      MMS_DETAIL_VIEW_TYPE,
+      (leaf) => new MmsDetailView(leaf, { index, opener, selection }),
+    );
     this.registerExtensions(['mms'], MMS_VIEW_TYPE);
     this.addSettingTab(new MmsSettingTab(this.app, this));
 
-    this.addRibbonIcon('git-fork', 'MMS：打开文件面板', () => void this.openSidePanel());
+    this.addRibbonIcon('git-fork', 'MMS：打开文件面板', () => {
+      void this.openSidePanel();
+    });
+
     this.addCommand({
       id: 'mms-open-side',
       name: 'MMS：打开文件面板',
-      callback: () => void this.openSidePanel(),
+      callback: () => {
+        void this.openSidePanel();
+      },
     });
+
     this.addCommand({
       id: 'mms-open-detail',
       name: 'MMS：打开详情面板',
-      callback: () => void this.openDetailPanel(),
+      callback: () => {
+        void this.openDetailPanel();
+      },
     });
+
     this.addCommand({
       id: 'mms-refresh',
       name: 'MMS：刷新全部 .mms',
-      callback: () => void index.refresh(),
+      callback: () => {
+        void index.refresh();
+      },
     });
 
+    // .mms 文件被编辑 / 重命名 / 删除后自动重扫（防抖合并连续事件）。
+    // 文件夹重命名会连带改变内部 .mms 路径，一律触发
+    this.registerEvent(
+      this.app.vault.on('modify', (file) => {
+        if (file instanceof TFile && file.extension === 'mms') this.scheduleVaultRescan();
+      }),
+    );
+    this.registerEvent(
+      this.app.vault.on('rename', (file) => {
+        if (!(file instanceof TFile) || file.extension === 'mms') this.scheduleVaultRescan();
+      }),
+    );
+    this.registerEvent(
+      this.app.vault.on('delete', (file) => {
+        if (!(file instanceof TFile) || file.extension === 'mms') this.scheduleVaultRescan();
+      }),
+    );
+
+    // 组件就绪后做首次全库扫描；空库时侧栏自己会给出提示
     void index.refresh();
   }
 
@@ -89,19 +129,26 @@ export default class MmsPlugin extends Plugin {
       window.clearTimeout(this.settingsTimer);
       this.settingsTimer = null;
     }
+    if (this.vaultTimer !== null) {
+      window.clearTimeout(this.vaultTimer);
+      this.vaultTimer = null;
+    }
+    // 防抖窗口内未落盘的设置立即补写，避免卸载时丢失
+    if (this.settingsDirty) void this.saveData(this.settings);
     this.settingsListeners.length = 0;
     this.index = null;
   }
 
-  async updateSettings(patch: Partial<MmsSettings>): Promise<void> {
+  /** 合并设置并安排防抖落盘与广播。非法输入由设置面板在调用前拦截 */
+  updateSettings(patch: Partial<MmsSettings>): void {
     this.settings = { ...this.settings, ...patch };
-    await this.saveData(this.settings);
+    this.settingsDirty = true;
     this.scheduleSettingsFlush();
   }
 
   /**
-   * 订阅设置变更，返回注销函数。视图在 onOpen 订阅、onClose 注销。
-   * 回调在防抖窗口结束后触发，已保证 this.settings 是最新值
+   * 订阅设置变更。回调在防抖窗口结束后触发，已保证 this.settings 是最新值。
+   * 返回注销函数，视图 onClose 必须调用
    */
   onSettingsChange(fn: () => void): () => void {
     this.settingsListeners.push(fn);
@@ -113,53 +160,58 @@ export default class MmsPlugin extends Plugin {
     if (idx >= 0) this.settingsListeners.splice(idx, 1);
   }
 
-  /** 防抖广播：先让各视图按新设置重绘，再整库重扫，保证数据与展示一致 */
+  /** 防抖落盘 + 广播：先保存，再让各视图按新设置重绘，最后整库重扫 */
   private scheduleSettingsFlush(): void {
     if (this.settingsTimer !== null) window.clearTimeout(this.settingsTimer);
     this.settingsTimer = window.setTimeout(() => {
       this.settingsTimer = null;
-      for (const fn of [...this.settingsListeners]) fn();
-      void this.index?.refresh();
+      void (async () => {
+        await this.saveData(this.settings);
+        this.settingsDirty = false;
+        for (const fn of [...this.settingsListeners]) fn();
+        await this.index?.refresh();
+      })();
     }, SETTINGS_DEBOUNCE_MS);
   }
 
-  private async loadSettings(): Promise<void> {
-    this.settings = { ...DEFAULT_SETTINGS, ...(await this.loadData()) };
+  /** vault 事件防抖：短时间内多次编辑只触发一次全库重扫 */
+  private scheduleVaultRescan(): void {
+    if (this.vaultTimer !== null) window.clearTimeout(this.vaultTimer);
+    this.vaultTimer = window.setTimeout(() => {
+      this.vaultTimer = null;
+      void this.index?.refresh();
+    }, VAULT_RESCAN_DEBOUNCE_MS);
   }
 
-  /** 把 MMS 文件面板挂到 Obsidian 左侧 sidebar */
+  private async loadSettings(): Promise<void> {
+    const data = (await this.loadData()) as Partial<MmsSettings> | null;
+    this.settings = { ...DEFAULT_SETTINGS, ...data };
+  }
+
   private async openSidePanel(): Promise<void> {
     const existing = this.app.workspace.getLeavesOfType(MMS_SIDE_VIEW_TYPE);
-    if (existing.length > 0) {
-      this.app.workspace.revealLeaf(existing[0]);
-      return;
-    }
-    const leaf = this.app.workspace.getLeftLeaf(false);
+    const leaf = existing[0] ?? this.app.workspace.getLeftLeaf(false);
     if (!leaf) return;
-    await leaf.setViewState({ type: MMS_SIDE_VIEW_TYPE, active: true });
+    if (existing.length > 0) await this.app.workspace.revealLeaf(leaf);
+    else await leaf.setViewState({ type: MMS_SIDE_VIEW_TYPE, active: true });
   }
 
-  /** 首次打开 .mms 时自动挂详情面板；用户手动关掉后不再弹出 */
-  private detailAutoOpened = false;
-
-  private ensureDetailLeaf(): void {
-    if (this.detailAutoOpened) return;
-    this.detailAutoOpened = true;
-    void this.openDetailPanel();
-  }
-
-  /**
-   * 把 MMS 详情面板挂到 Obsidian 右侧 sidebar（移动端为独立覆盖界面）。
-   * 公开：左栏「查看详情」按钮与命令面板都走这里
-   */
+  /** 状态卡/命令入口：唤起右侧详情面板，已打开时聚焦即可 */
   async openDetailPanel(): Promise<void> {
     const existing = this.app.workspace.getLeavesOfType(MMS_DETAIL_VIEW_TYPE);
     if (existing.length > 0) {
-      this.app.workspace.revealLeaf(existing[0]);
+      await this.app.workspace.revealLeaf(existing[0]);
       return;
     }
     const leaf = this.app.workspace.getRightLeaf(false);
     if (!leaf) return;
-    await leaf.setViewState({ type: MMS_DETAIL_VIEW_TYPE, active: false });
+    await leaf.setViewState({ type: MMS_DETAIL_VIEW_TYPE, active: true });
+  }
+
+  /** onload 时（且仅一次）自动挂详情面板，避免用户以为右栏坏了 */
+  private ensureDetailLeaf(): void {
+    if (this.detailAutoOpened) return;
+    this.detailAutoOpened = true;
+    void this.openDetailPanel();
   }
 }

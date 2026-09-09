@@ -4,7 +4,7 @@
  */
 
 import { describe, expect, it } from 'vitest';
-import { resolveLayout, splitFrontmatter } from './frontmatter';
+import { resolveLayout, resolveLineStyle, splitFrontmatter } from './frontmatter';
 
 describe('splitFrontmatter', () => {
   it('首行不是 --- 时不解析，正文为全文', () => {
@@ -44,6 +44,17 @@ describe('splitFrontmatter', () => {
   it('mms_layout 非法值被忽略', () => {
     expect(splitFrontmatter('---\nmms_layout: XX\n---\n# R').frontmatter?.mms_layout).toBeUndefined();
     expect(resolveLayout(splitFrontmatter('---\nmms_layout: XX\n---\n# R').frontmatter)).toBe('LR');
+  });
+
+  it('mms_line 四个方向外的合法值只有 line 与 curve，且大小写不敏感', () => {
+    expect(splitFrontmatter('---\nmms_line: CURVE\n---\n# R').frontmatter?.mms_line).toBe('curve');
+    expect(splitFrontmatter('---\nmms_line: line\n---\n# R').frontmatter?.mms_line).toBe('line');
+  });
+
+  it('mms_line 非法值被忽略并回退 line', () => {
+    expect(splitFrontmatter('---\nmms_line: ZZ\n---\n# R').frontmatter?.mms_line).toBeUndefined();
+    expect(resolveLineStyle(splitFrontmatter('---\nmms_line: ZZ\n---\n# R').frontmatter)).toBe('line');
+    expect(resolveLineStyle(null)).toBe('line');
   });
 
   it('返回正确的正文起始行号', () => {

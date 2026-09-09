@@ -109,6 +109,38 @@ describe('跨边引用', () => {
     const doc = parse('# R\n## A\n<=> B\n## B');
     expect(doc.nodeMap.get('R>B')?.incomingRefs).toHaveLength(1);
   });
+
+  it('跨文件目标用空格分隔：文件名.mms 节点', () => {
+    const doc = parse('# R\n## A\n<=> b.mms B\n');
+    const ref = doc.nodeMap.get('R>A')?.crossRefs[0];
+    expect(ref?.targetFilePath).toBe('b.mms');
+    expect(ref?.targetNodeId).toBe('B');
+    expect(ref?.resolved).toBe(false); // 单文件阶段跨文件保持未解析
+  });
+});
+
+describe('节点引用 ::', () => {
+  it('同文件节点引用即时解析，不建边', () => {
+    const doc = parse('# R\n## A\n:: B\n## B');
+    const ref = doc.nodeMap.get('R>A')?.nodeRefs[0];
+    expect(ref?.resolved).toBe(true);
+    expect(ref?.targetNodeId).toBe('R>B');
+    expect(doc.nodeMap.get('R>B')?.incomingRefs).toHaveLength(0);
+  });
+
+  it('跨文件节点引用保留未解析并记录目标文件', () => {
+    const doc = parse('# R\n## A\n:: b.mms::B\n');
+    const ref = doc.nodeMap.get('R>A')?.nodeRefs[0];
+    expect(ref?.targetFilePath).toBe('b.mms');
+    expect(ref?.targetNodeId).toBe('B');
+    expect(ref?.resolved).toBe(false);
+  });
+
+  it('目标不存在时不产生 missing-target 警告', () => {
+    const doc = parse('# R\n## A\n:: 不存在\n');
+    expect(doc.nodeMap.get('R>A')?.nodeRefs[0].resolved).toBe(false);
+    expect(doc.warnings.some((w) => w.type === 'missing-target')).toBe(false);
+  });
 });
 
 describe('嵌入分流', () => {

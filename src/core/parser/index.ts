@@ -4,7 +4,7 @@
  */
 
 import type { IParsedDoc, IWarning } from '../../host/types';
-import { resolveLayout, splitFrontmatter } from '../frontmatter';
+import { resolveLayout, resolveLineStyle, splitFrontmatter } from '../frontmatter';
 import { parseBody } from './body';
 
 /** 显示名优先 frontmatter 的 mms_name，否则用文件名去扩展名 */
@@ -36,11 +36,13 @@ export function parseMms(content: string, filePath: string): IParsedDoc {
     filePath,
     displayName,
     layout: resolveLayout(frontmatter),
+    lineStyle: resolveLineStyle(frontmatter),
     tags: frontmatter?.mms_tags ?? [],
     desc: frontmatter?.mms_desc ?? null,
     nodes,
     nodeMap,
     rootId,
     warnings,
+    outgoingRefs: [],
   };
 }

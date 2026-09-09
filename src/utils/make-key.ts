@@ -1,18 +1,21 @@
 /**
  * @module utils/make-key
- * @description 节点 id 与反链 key 的唯一构造函数。core 与 host 共用，避免 core 反向依赖 host
+ * @description 节点 id 构造与引用目标解析的唯一出口。被 core 与 ui 共用，避免 core 反向依赖 host
  */
 
-import type { MmsLayout } from '../host/types';
+import type { MmsLayout, MmsLineStyle } from '../host/types';
 
 /** 节点 id 的层级分隔符 */
 export const ID_SEP = '>';
 
-/** 反链 key 的文件与节点分隔符 */
-export const KEY_SEP = '::';
+/** `::` 节点引用语法中文件与节点的分隔符（仅本模块使用） */
+const KEY_SEP = '::';
 
 /** 默认布局方向，frontmatter 缺失或非法时使用 */
 export const DEFAULT_LAYOUT: MmsLayout = 'LR';
+
+/** 默认连线样式，frontmatter 缺失或非法时使用 */
+export const DEFAULT_LINE_STYLE: MmsLineStyle = 'line';
 
 /** 归一化节点文本：去首尾空白，作为 id 的组成部分 */
 export function normalizeText(text: string): string {
@@ -28,13 +31,18 @@ export function makeNodeId(parentId: string | null, text: string): string {
   return parentId ? `${parentId}${ID_SEP}${t}` : t;
 }
 
-/** 构造反链索引 key */
-export function makeBacklinkKey(filePath: string, nodeId: string): string {
-  return `${filePath}${KEY_SEP}${nodeId}`;
+/** 解析 `<=>` 跨边目标：跨文件为 `文件名.mms 节点文本`（空格分隔），同文件为 `节点文本` */
+export function parseRefTarget(raw: string): { filePath: string | null; nodeText: string } {
+  const trimmed = raw.trim();
+  const cross = /^(\S+\.mms)\s+(.+)$/i.exec(trimmed);
+  if (cross) {
+    return { filePath: cross[1], nodeText: cross[2].trim() };
+  }
+  return { filePath: null, nodeText: trimmed };
 }
 
-/** 解析 `<=>` 的目标写法，支持 `文件.mms::节点` 与 `节点` 两种形式 */
-export function parseRefTarget(raw: string): { filePath: string | null; nodeText: string } {
+/** 解析 `::` 节点引用目标：跨文件为 `文件名.mms::节点文本`，同文件为 `节点文本` */
+export function parseNodeRefTarget(raw: string): { filePath: string | null; nodeText: string } {
   const idx = raw.indexOf(KEY_SEP);
   if (idx >= 0) {
     return {

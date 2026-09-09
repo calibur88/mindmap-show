@@ -138,6 +138,55 @@
   font-size: 11px;
 }
 
+/* ------------------------------------------------------ 左栏：文件搜索栏 */
+
+.mms-section-search {
+  flex: 0 0 auto;
+}
+
+.mms-search-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+}
+
+.mms-search-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 4px 8px;
+  border: var(--mms-border);
+  border-radius: 4px;
+  background-color: var(--background-primary);
+  color: var(--text-normal);
+  font-size: 12px;
+}
+
+.mms-search-actions {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 4px;
+}
+
+.mms-search-btn {
+  padding: 3px 8px;
+  border: var(--mms-border);
+  border-radius: 4px;
+  background-color: var(--background-primary);
+  color: var(--text-normal);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.mms-search-btn:hover {
+  color: var(--interactive-accent);
+}
+
+.mms-search-go {
+  border-color: var(--interactive-accent);
+  color: var(--interactive-accent);
+}
+
 /* ---------------------------------------------------------- 左栏：文件树 */
 
 .mms-file-tree {
@@ -343,6 +392,20 @@
   word-break: break-word;
 }
 
+/* 断链（目标文件/节点不存在）灰显 */
+.mms-info-row .mms-info-val.is-broken {
+  color: var(--text-faint);
+  opacity: 0.7;
+}
+
+/* 右栏「标签」卡的标签chip容器，支持换行 */
+.mms-tag-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 2px 0;
+}
+
 /* 节点注释（** 注释，斜体小字） */
 .mms-node-annotation {
   margin-bottom: 4px;
@@ -431,6 +494,12 @@
 .mms-dom-node.mms-depth-5,
 .mms-dom-node.mms-depth-6 { border-left-color: #b4b2a9; }
 
+/* 画布选中高亮：与右栏选中态联动 */
+.mms-dom-node.is-selected {
+  box-shadow: 0 0 0 2px var(--interactive-accent);
+  background-color: var(--background-modifier-hover);
+}
+
 .mms-node-text {
   font-size: 13px;
   font-weight: 500;
@@ -499,6 +568,11 @@
 .mms-svg-node.mms-depth-1 rect { stroke: #5dcaa5; }
 .mms-svg-node.mms-depth-2 rect { stroke: #ef9f27; }
 .mms-svg-node.mms-depth-3 rect { stroke: #ed93b1; }
+
+.mms-svg-node.is-selected rect {
+  stroke: var(--interactive-accent);
+  stroke-width: 2.5;
+}
 
 .mms-svg-text {
   fill: var(--text-normal);

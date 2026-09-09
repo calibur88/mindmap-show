@@ -1,6 +1,8 @@
 ---
-mms_tags: [技术, 后端]
+mms_name: TB 上到下
+mms_tags: [示例, 布局方向]
 mms_layout: TB
+mms_desc: 父节点在上，子节点向下展开（Top → Bottom）
 ---
 
 # 后端开发

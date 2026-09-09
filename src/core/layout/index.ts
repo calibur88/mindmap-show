@@ -10,9 +10,10 @@ import type {
   ILayoutResult,
   IMmsNode,
 } from '../../host/types';
+import { DEFAULT_LAYOUT } from '../../utils/make-key';
 
 export const DEFAULT_LAYOUT_OPTIONS: ILayoutOptions = {
-  direction: 'LR',
+  direction: DEFAULT_LAYOUT,
   nodeGap: 16,
   levelGap: 64,
 };
@@ -101,6 +102,8 @@ export function layoutTree(
   options: Partial<ILayoutOptions> = {},
 ): ILayoutResult {
   const opts: ILayoutOptions = { ...DEFAULT_LAYOUT_OPTIONS, ...options };
+  /** 垂直布局（TB/BT）沿 Y 轴推进层级，水平布局（LR/RL）沿 X 轴推进 */
+  const vertical = opts.direction === 'TB' || opts.direction === 'BT';
   const nodes = new Map<string, ILayoutNode>();
   const edges: ILayoutEdge[] = [];
 
@@ -111,11 +114,11 @@ export function layoutTree(
   const sizes = new Map<string, { width: number; height: number }>();
   for (const node of nodeMap.values()) sizes.set(node.id, measure(node));
 
-  /** 主轴 = 层级推进方向（TB 时为 y），交叉轴 = 兄弟排列方向 */
+  /** 主轴 = 层级推进方向（垂直布局时为 y），交叉轴 = 兄弟排列方向 */
   const mainOf = (size: { width: number; height: number }): number =>
-    opts.direction === 'TB' ? size.height : size.width;
+    vertical ? size.height : size.width;
   const crossOf = (size: { width: number; height: number }): number =>
-    opts.direction === 'TB' ? size.width : size.height;
+    vertical ? size.width : size.height;
 
   /** 每层的主轴最大尺寸，用于算层级偏移 */
   const levelMain: number[] = [];
@@ -179,9 +182,10 @@ export function layoutTree(
     const h = size.height;
     let x: number;
     let y: number;
-    if (opts.direction === 'TB') {
+    if (vertical) {
+      // 子节点在交叉轴上居中；BT 把主轴坐标翻转，父在下、子向上展开
       x = crossCenter - w / 2;
-      y = mainOffset;
+      y = opts.direction === 'BT' ? totalMain - mainOffset - h : mainOffset;
     } else if (opts.direction === 'RL') {
       x = totalMain - mainOffset - w;
       y = crossCenter - h / 2;
@@ -210,7 +214,7 @@ export function layoutTree(
     }
   }
 
-  return opts.direction === 'TB'
+  return vertical
     ? { nodes, edges, width: maxCross, height: totalMain }
     : { nodes, edges, width: totalMain, height: maxCross };
 }

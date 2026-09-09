@@ -5,14 +5,21 @@
 
 // ---------------------------------------------------------------- Frontmatter
 
-/** 布局方向：LR 左→右 / TB 上→下 / RL 右→左 */
-export type MmsLayout = 'LR' | 'TB' | 'RL';
+/**
+ * 布局方向，一律以「父节点 → 子节点」的流动方向为准：
+ * `TB` 上→下 / `BT` 下→上 / `LR` 左→右 / `RL` 右→左
+ */
+export type MmsLayout = 'TB' | 'BT' | 'LR' | 'RL';
 
-/** `.mms` 文件头部允许出现的四个固定键 */
+/** 连线样式：`line` 直线 / `curve` 三次贝塞尔曲线 / `elbow` 直角折线 */
+export type MmsLineStyle = 'line' | 'curve' | 'elbow';
+
+/** `.mms` 文件头部允许出现的固定键 */
 export interface MmsFrontmatter {
   mms_name?: string;
   mms_tags?: string[];
   mms_layout?: MmsLayout;
+  mms_line?: MmsLineStyle;
   mms_desc?: string;
 }
 
@@ -34,7 +41,7 @@ export interface IEmbed {
   lineNo: number;
 }
 
-/** 一条跨边引用（出边） */
+/** 一条跨边引用（出边，`<=>` 建立的有向边） */
 export interface ICrossRef {
   /** 目标节点 id；跨文件且尚未解析时等于目标的原始文本 */
   targetNodeId: string;
@@ -44,6 +51,19 @@ export interface ICrossRef {
   rawTarget: string;
   /** 备注文本（目标列表与备注之间两个以上空格或 Tab 分隔） */
   label: string;
+  lineNo: number;
+  /** 是否已解析到真实存在的节点 */
+  resolved: boolean;
+}
+
+/** 一条节点引用（`::` 点对点定位，只做跳转，不建边、不画虚线、不产生入链/出链） */
+export interface INodeRef {
+  /** 目标节点 id；跨文件且尚未解析时等于目标的原始文本 */
+  targetNodeId: string;
+  /** 目标文件，缺省为当前文件 */
+  targetFilePath: string;
+  /** 语法原文，用于右栏「引用链」卡展示 */
+  rawTarget: string;
   lineNo: number;
   /** 是否已解析到真实存在的节点 */
   resolved: boolean;
@@ -72,6 +92,8 @@ export interface IMmsNode {
   /** 同名合并后可能出现多个父节点 */
   parentIds: string[];
   crossRefs: ICrossRef[];
+  /** `::` 节点引用（点对点定位，不建边），跨文件部分由索引构建器补全 */
+  nodeRefs: INodeRef[];
   /** 引用了本节点的来源，跨文件部分由反链索引补全 */
   incomingRefs: IBacklink[];
   embeds: IEmbed[];
@@ -107,26 +129,42 @@ export interface IParsedDoc {
   /** mms_name ?? 文件名去扩展名 */
   displayName: string;
   layout: MmsLayout;
+  /** 连线样式，缺省 `line` */
+  lineStyle: MmsLineStyle;
   tags: string[];
   desc: string | null;
   nodes: IMmsNode[];
   nodeMap: Map<string, IMmsNode>;
   rootId: string | null;
   warnings: IWarning[];
+  /** 本文件指向外部文件的 `<=>` 出链，由索引构建器聚合（不含同文件引用） */
+  outgoingRefs: IOutlink[];
 }
 
 // ---------------------------------------------------------------------- 反链
 
-/** 一条反链记录 */
+/** 一条入链记录：其他文件的 `<=>` 指向本节点 */
 export interface IBacklink {
+  /** 来源文件路径 */
   sourcePath: string;
+  /** 来源行号（1 起） */
   sourceLine: number;
-  targetNode: string;
 }
 
-export interface BacklinkIndex {
-  get(key: string): IBacklink[] | undefined;
-  getAll(): Map<string, IBacklink[]>;
+/** 一条出链：本文件 `<=>` 指向外部文件的节点，由索引构建器聚合 */
+export interface IOutlink {
+  /** 目标文件路径（未解析时为语法原文） */
+  targetPath: string;
+  /** 目标节点在目标文件中的行号（未解析时为 0） */
+  targetLine: number;
+  /** 出链所在的源节点 id */
+  sourceNodeId: string;
+  /** 出链所在的源节点文本 */
+  sourceText: string;
+  /** 目标节点 id，用于跳转定位；未解析时为 null */
+  targetNodeId: string | null;
+  /** 是否已解析到真实存在的节点（false 时右栏显示灰色断链） */
+  resolved: boolean;
 }
 
 // ---------------------------------------------------------------------- 布局
@@ -170,25 +208,27 @@ export interface IVaultHost {
   readFile(filePath: string): Promise<string>;
 }
 
-/** 元数据与索引查询能力 */
-export interface IMetaHost {
-  setBacklinkIndex(index: BacklinkIndex): void;
-  getBacklinks(nodeId: string, filePath: string): IBacklink[];
-}
-
 /** 打开与跳转能力 */
 export interface IOpener {
-  /** 在新标签页打开脑图 */
+  /** 打开脑图。已打开同文件的脑图标签页时复用，不重复新建 */
   openMindMap(filePath: string): Promise<void>;
-  /** 打开源码并定位到指定行（.mms 以 source 模式的 markdown 视图打开） */
+  /** 打开源码并定位到指定行（.mms 以 source 模式的 markdown 视图打开）。
+   *  已打开同文件源码时复用该标签页 */
   openSource(filePath: string, lineNo?: number): Promise<void>;
 }
 
+/** 刷新状态：synced 正常 / error 上次刷新失败 */
+export type UiStatus = 'synced' | 'error';
+
 /** UI 反馈能力 */
 export interface IUiHost {
-  setStatus(state: 'synced' | 'error', detail?: string): void;
-  /** 注册状态变更监听，由左栏状态卡消费 */
-  onStatus(listener: (state: 'synced' | 'error', detail?: string) => void): void;
+  setStatus(state: UiStatus, detail?: string): void;
+  /** 注册状态变更监听，由左栏状态卡与画布 footer 消费 */
+  onStatus(listener: (state: UiStatus, detail?: string) => void): void;
+  /** 注销监听。状态卡等长生命周期控件在销毁时必须调用，否则监听器泄漏 */
+  offStatus(listener: (state: UiStatus, detail?: string) => void): void;
+  /** 最近一次 setStatus 的状态，用于控件重建时回放 */
+  getLastState(): UiStatus;
   /** 最近一次 setStatus 的 detail 文本，用于 footer 与左栏底部状态卡显示 */
   getLastDetail(): string;
 }

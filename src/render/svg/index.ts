@@ -6,16 +6,12 @@
 import type { ILayoutResult, IParsedDoc } from '../../host/types';
 import { layoutTree } from '../../core/layout';
 import { svgEl } from '../../utils/dom';
-import { buildEdgesSvg } from '../shared/edges';
+import { buildEdgesSvg, type ILineRenderOptions } from '../shared/edges';
 
-export interface PanoramaRenderOptions {
-  /** 树边线宽（像素），从 settings 传入 */
-  lineWidth: number;
-  /** 跨文件引用虚线线宽（像素） */
-  crossLineWidth: number;
+export interface PanoramaRenderOptions extends ILineRenderOptions {
   /** 子节点之间间距（像素） */
   nodeGap: number;
-  /** 层级之间间距（像素） */
+  /** 层级之间间距（像素），同时作为曲线模式的安全推力上限 `H0` */
   levelGap: number;
   onNodeClick?: (nodeId: string) => void;
 }
@@ -45,7 +41,15 @@ export function renderPanorama(doc: IParsedDoc, options: PanoramaRenderOptions):
     return svg;
   }
 
-  const edges = buildEdgesSvg(layout, doc.layout, width, height, options.lineWidth, options.crossLineWidth);
+  const edges = buildEdgesSvg(layout, {
+    direction: doc.layout,
+    lineStyle: options.lineStyle,
+    gap: options.levelGap,
+    width,
+    height,
+    treeLineWidth: options.lineWidth,
+    crossLineWidth: options.crossLineWidth,
+  });
   edges.setAttribute('x', String(PADDING));
   edges.setAttribute('y', String(PADDING));
   svg.appendChild(edges);
@@ -55,7 +59,10 @@ export function renderPanorama(doc: IParsedDoc, options: PanoramaRenderOptions):
     const node = doc.nodeMap.get(id);
     if (!node) continue;
 
-    const g = svgEl('g', { class: `mms-svg-node mms-depth-${Math.min(node.depth, 6)}` });
+    const g = svgEl('g', {
+      class: `mms-svg-node mms-depth-${Math.min(node.depth, 6)}`,
+      'data-node-id': node.id,
+    });
     g.appendChild(svgEl('rect', { x: box.x, y: box.y, width: box.width, height: box.height, rx: 6 }));
 
     const cx = box.x + box.width / 2;

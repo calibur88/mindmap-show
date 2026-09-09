@@ -1,6 +1,8 @@
 ---
-mms_tags: [技术, 前端]
+mms_name: LR 左到右
+mms_tags: [示例, 布局方向]
 mms_layout: LR
+mms_desc: 父节点在左，子节点向右展开（Left → Right）
 ---
 
 # 前端开发

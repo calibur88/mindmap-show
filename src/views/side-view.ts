@@ -71,6 +71,9 @@ export class MmsSideView extends ItemView {
     this.deps.index.offUpdate(this.boundRender);
     this.unsubscribeSettings?.();
     this.unsubscribeSettings = null;
+    // 级联注销状态卡的 onStatus 监听，避免侧栏反复开闭累积泄漏
+    this.leftPanel?.destroy();
+    this.leftPanel = null;
   }
 
   private render(): void {

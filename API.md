@@ -1,8 +1,8 @@
 # API 索引
 
-> Mind Map Show (MMS) - Obsidian 思维导图插件。文档版本：v1.0（2026-09-09）
+> Mind Map Show (MMS) - Obsidian 思维导图插件。文档版本：v1.2（2026-09-09）
 
-本文档列出插件版本1.0.0用到的Obsidian官方API与插件自身API。仅记录真实用到的，不写"未来可能用到的"。
+本文档列出插件版本1.1.0用到的Obsidian官方API与插件自身API。仅记录真实用到的，不写"未来可能用到的"。
 
 ---
 
@@ -145,26 +145,27 @@ declare module 'obsidian' {
 
 | 类型 | 用途 |
 |---|---|
-| `MmsLayout = 'LR' \| 'TB' \| 'RL'` | 布局方向 |
-| `MmsFrontmatter` | frontmatter 四个固定键：mms_name / mms_tags / mms_layout / mms_desc |
+| `MmsLayout = 'TB' \| 'BT' \| 'LR' \| 'RL'` | 布局方向，一律以父→子的流向为准 |
+| `MmsLineStyle = 'line' \| 'curve' \| 'elbow'` | 连线样式：直线 / 三次贝塞尔曲线 / 直角折线 |
+| `MmsFrontmatter` | frontmatter 五个固定键：mms_name / mms_tags / mms_layout / mms_line / mms_desc |
 | `NodeType = 'heading' \| 'child' \| 'auto'` | 节点来源：标题行 / -- 行 / 自动补齐 |
 | `EmbedKind = 'image' \| 'mms' \| 'file' \| 'url'` | 嵌入分流结果 |
 | `IEmbed` | 嵌入条目 |
-| `ICrossRef` | 跨边引用（出边） |
-| `IMmsNode` | 节点：id / text / type / depth / lineNo / **content** / **annotation** / childIds / parentIds / crossRefs / incomingRefs / embeds / sourceFilePath / isAutoFix |
+| `ICrossRef` | 跨边引用（`<=>` 出边） |
+| `INodeRef` | 节点引用（`::` 点对点定位，不建边） |
+| `IMmsNode` | 节点：id / text / type / depth / lineNo / **content** / **annotation** / childIds / parentIds / crossRefs / nodeRefs / incomingRefs / embeds / sourceFilePath / isAutoFix |
 | `IWarning` | 解析警告 |
-| `IParsedDoc` | 一个 .mms 文件的解析结果 |
-| `IBacklink` | 反链条目 |
-| `BacklinkIndex` | Map 接口包装 |
+| `IParsedDoc` | 一个 .mms 文件的解析结果（含 `layout`、`lineStyle`、`outgoingRefs`） |
+| `IBacklink` | 入链条目（`<=>` 指向本节点的来源，含本文件；右栏同文件来源显示为「本文件」，sourcePath / sourceLine） |
+| `IOutlink` | 出链条目（本文件 `<=>` 指向外部节点，文件级聚合） |
 
 ### 3.2 宿主接口（注入，不直接 import obsidian）
 
 | 接口 | 实现位置 | 能力 |
 |---|---|---|
-| `IVaultHost` | host/obsidian/vault.ts | listMmsFiles / readFile / getMtime / exists |
-| `IMetaHost` | host/obsidian/meta.ts | getFrontmatter / extractMmsTags / extractMmsDesc / setBacklinkIndex / getBacklinks |
-| `IOpener` | host/obsidian/opener.ts | openMindMap / openSource / openPath / openUrl / revealInSystem |
-| `IUiHost` | host/obsidian/ui-host.ts | notify / setStatus / onStatus / getLastDetail |
+| `IVaultHost` | host/obsidian/vault.ts | listMmsFiles / readFile |
+| `IOpener` | host/obsidian/opener.ts | openMindMap / openSource（同文件复用标签页，openSource 显式 setCursor 定位行号） |
+| `IUiHost` | host/obsidian/ui-host.ts | setStatus / onStatus / offStatus / getLastState / getLastDetail |
 
 ### 3.3 渲染层导出
 
@@ -172,31 +173,69 @@ declare module 'obsidian' {
 |---|---|---|
 | `renderExplore(doc, opts)` | 探索视图 | `DocumentFragment` |
 | `renderPanorama(doc, opts)` | 全景视图 | `SVGSVGElement` |
-| `layoutTree(rootId, nodeMap, opts)` | 布局算法 | `ILayoutResult {nodes, edges, width, height}` |
-| `buildEdgesSvg(layout, dir, w, h, lineWidth, crossLineWidth)` | 连线 SVG | `SVGSVGElement` |
+| `layoutTree(rootId, nodeMap, opts)` | 布局算法，`opts.direction` 支持 TB/BT/LR/RL | `ILayoutResult {nodes, edges, width, height}` |
+| `buildEdgePath(from, to, geo)` | 单条连线路径，`geo` 为 `{direction, lineStyle, gap}` | `string`（`M...L...` 直线或折线、`M...C...` 曲线） |
+| `buildEdgesSvg(layout, options)` | 连线层 SVG | `SVGSVGElement` |
+
+`buildEdgesSvg` 的 `options` 为 `IBuildEdgesOptions`：
+
+```ts
+interface IBuildEdgesOptions {
+  direction: MmsLayout;      // TB / BT / LR / RL，决定锚点取哪条边
+  lineStyle: MmsLineStyle;   // line 直线 / curve 贝塞尔 / elbow 折线
+  gap: number;               // 预设间距 H0，曲线安全推力上限
+  width: number;
+  height: number;
+  treeLineWidth: number;
+  crossLineWidth: number;
+}
+```
+
+曲线模式的推力规则实现在 `src/render/shared/edges.ts:buildEdgePath`：
+
+| 规则 | 公式 |
+|---|---|
+| 安全推力 | `h = max(5, min(H₀, \|Δspread\| × 0.45))` |
+| 正对直连补偿 | `Δspread = 0` → `h = max(h, 25)` |
+| 极限陡坡增压 | `\|Δflow\| > 3\|Δspread\|` 且 `Δspread ≠ 0` → `h = max(h, \|Δflow\| × 0.18)` |
+
+其中垂直布局（`TB`/`BT`）取 `Δspread = x₃ - x₀`、`Δflow = y₃ - y₀`；水平布局（`LR`/`RL`）取 `Δspread = y₃ - y₀`、`Δflow = x₃ - x₀`。
+
+`elbow` 不需要推力：垂直布局走「竖 → 横 → 竖」，拐点纵坐标为 `(y₀ + y₃) / 2`；水平布局走「横 → 竖 → 横」，拐点横坐标为 `(x₀ + x₃) / 2`。
 
 ### 3.4 控件类
 
 | 类 | 用途 |
 |---|---|
-| `LeftPanel(container, opener, uiHost, onRefresh, onSelectTag, openDetailPanel)` | 左 sidebar 全部 UI |
-| `RightPanel(container, opener)` | 右栏节点详情 |
-| `StatusCard(container, uiHost, onRefresh, openDetailPanel)` | 左栏底部状态卡（刷新 / 查看详情 两个按钮，仅异常态显示文案） |
+| `LeftPanel(container, opener, uiHost, onRefresh, onSelectTag, openDetailPanel)` | 左 sidebar 全部 UI：标签栏 / 搜索栏 / 文件树 / 调试信息 / 状态卡；`destroy()` 注销状态卡监听并移除 DOM |
+| `RightPanel(container, actions)` | 右栏节点详情：来源文件 / 当前节点 / 标签 / 引用链（选中节点的`<=>`跨边＋`::`定位合并展示，断链灰显）/ 入链（`<=>`指向该节点的来源，同文件显示为「本文件」）/ 出链（文件级，同文件引用不进此卡）/ 节点注释 / 嵌入资源，`actions` 提供 `openSource` 与 `openAndSelect` 跳转；`renderEmpty(hint?)` 支持降级提示 |
+| `StatusCard(container, uiHost, onRefresh, openDetailPanel)` | 左栏底部状态卡（刷新 / 查看详情 两个按钮，仅异常态显示文案）；`destroy()` 注销 `onStatus` 监听 |
 | `CanvasViewport` | 画布视口（鼠标 / 触控 + 缩放） |
+
+左栏文件搜索的行为契约（`LeftPanel` 内部状态 `keyword`，空串表示不过滤）：
+
+| 操作 | 触发条件 | 响应 |
+|---|---|---|
+| 执行搜索 | 输入框非空 + 点「搜索」或回车 | 在当前标签分组内按文件名（忽略大小写）过滤，并展开全部文件夹 |
+| 空输入搜索 | 输入框为空 | 忽略本次操作，不刷新、不报错 |
+| 清空（有关键词） | `keyword` 非空 + 点「清空」或原生 × 按钮 | 清空输入框，撤销过滤，回退到当前标签分组的默认视图 |
+| 清空（无关键词） | `keyword` 为空 + 点「清空」或原生 × 按钮 | 只清输入框，不触发列表刷新 |
+| 切换标签分组 | 点任意标签 chip | 同步清空搜索框与关键词，再进入新分组 |
+
+清空**不等于**恢复全局完整列表，只是撤销关键词过滤，标签分组的选择保持不变。
 
 ### 3.5 控制器
 
 ```ts
 class MmsIndex {
-  constructor(vaultHost, metaHost, uiHost);
-  refresh(): Promise<void>;                        // 全量扫描：解析 → 跨文件引用 → 反链索引
+  constructor(vaultHost, uiHost);
+  refresh(): Promise<void>;                        // 全量扫描：解析 → 跨文件引用/节点引用 → 出链聚合
   onUpdate(listener: () => void): void;
   offUpdate(listener: () => void): void;
   getDoc(filePath: string): IParsedDoc | undefined;
   getFileSummaries(): IFileSummary[];              // 左栏文件树用
   getAllWarnings(): IWarning[];                    // 聚合全工程警告，按 severity/文件/行号排序
   getTagStats(): { name: string; count: number }[];
-  getBacklinks(nodeId, filePath): IBacklink[];
 }
 ```
 
@@ -207,13 +246,14 @@ class MmsIndex {
 ```ts
 class MmsPlugin extends Plugin {
   settings: MmsSettings;
-  updateSettings(patch: Partial<MmsSettings>): Promise<void>;  // 合并 → 落盘 → 防抖广播
-  onSettingsChange(fn: () => void): () => void;                 // 订阅设置变更，返回注销函数
-  openDetailPanel(): Promise<void>;                             // 唤起 / 复用右侧详情面板
+  updateSettings(patch: Partial<MmsSettings>): void;  // 内存合并 → 防抖落盘与广播
+  onSettingsChange(fn: () => void): () => void;       // 订阅设置变更，返回注销函数
+  openDetailPanel(): Promise<void>;                   // 唤起 / 复用右侧详情面板
 }
 ```
 
-设置变更走 400ms 防抖：先广播给各视图按新值重绘，再触发 `index.refresh()` 整库重扫。
+设置变更走 400ms 防抖：窗口结束后先 `saveData` 落盘，再广播给各视图按新值重绘，最后触发 `index.refresh()` 整库重扫。
+vault 事件（`.mms` 的 modify / rename / delete，含文件夹改名）走 500ms 防抖自动重扫。
 视图在 `onOpen` 订阅、`onClose` 注销，避免 leaf 反复开闭累积回调。
 
 ---
@@ -223,9 +263,9 @@ class MmsPlugin extends Plugin {
 ```ts
 import { parseMms } from 'src/core/parser';
 import { splitFrontmatter } from 'src/core/frontmatter';
-import { buildBacklinkIndex, resolveCrossFileRefs } from 'src/core/index-builder';
+import { buildOutgoingRefs, resolveCrossFileNodeRefs, resolveCrossFileRefs } from 'src/core/index-builder';
 import { layoutTree, measureTextWidth } from 'src/core/layout';
-import { makeNodeId, makeBacklinkKey, normalizeText } from 'src/utils/make-key';
+import { makeNodeId, normalizeText, parseNodeRefTarget, parseRefTarget } from 'src/utils/make-key';
 ```
 
 这些函数都是纯函数，无副作用，可直接 import 测试。
