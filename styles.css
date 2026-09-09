@@ -328,6 +328,12 @@
   min-width: 0;
 }
 
+/* 搜索行允许换行：导航按钮出现后宽度不足时按钮组落第二行，永不溢出容器 */
+.mms-toolbar-search {
+  flex-wrap: wrap;
+  row-gap: 4px;
+}
+
 .mms-canvas-toolbar .mms-spacer {
   flex: 1 1 auto;
 }
@@ -354,10 +360,10 @@
   color: var(--text-on-accent);
 }
 
-/* 节点搜索输入框 */
+/* 节点搜索输入框：min-width 保证 wrap 换行发生在输入框压扁之前 */
 .mms-search-input {
   flex: 1 1 120px;
-  min-width: 0;
+  min-width: 100px;
   padding: 2px 8px;
   border: var(--mms-border);
   border-radius: 4px;
@@ -539,6 +545,14 @@
   @container mms-canvas (min-width: 500px) {
     .mms-canvas-toolbar {
       font-size: 13px;
+    }
+  }
+
+  /* 搜索行换行点控制：画布窄（移动端/分屏）时输入框独占第一行，
+     [搜索][导航][视图按钮] 整体落第二行，避免按钮被逐个挤下来 */
+  @container mms-canvas (max-width: 560px) {
+    .mms-search-input {
+      flex-basis: 100%;
     }
   }
 }
