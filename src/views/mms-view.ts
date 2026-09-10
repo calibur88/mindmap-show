@@ -216,6 +216,10 @@ export class MmsView extends FileView {
     searchBtn.addEventListener('click', () => this.searchNode(this.searchQuery));
     searchRow.appendChild(searchBtn);
 
+    const clearBtn = el('button', { cls: 'mms-mini-btn', text: '清空', attr: { type: 'button', title: '清空搜索词并撤销过滤' } });
+    clearBtn.addEventListener('click', () => this.clearSearch());
+    searchRow.appendChild(clearBtn);
+
     // 命中导航：多个节点含相同文本（如重复正文）时「上一个/下一个」循环跳转，含计数
     this.searchNavEl = el('span', { cls: 'mms-search-nav is-hidden' });
     const prevBtn = el('button', { cls: 'mms-mini-btn', text: '‹ 上一个', attr: { type: 'button', title: '上一个匹配（循环）' } });
@@ -310,6 +314,21 @@ export class MmsView extends FileView {
     const has = this.searchHits.length > 0 && this.searchHitIdx >= 0;
     this.searchNavEl.classList.toggle('is-hidden', !has);
     if (has) this.searchCounterEl.textContent = `${this.searchHitIdx + 1}/${this.searchHits.length}`;
+  }
+
+  /** 清空搜索：清空输入框与搜索词、清除命中态、隐藏导航、回退默认 footer。
+   *  不触发重新检索，参照左栏搜索「清空」行为：有关键词才操作，无关键词忽略 */
+  private clearSearch(): void {
+    if (!this.searchQuery && this.searchHits.length === 0) return;
+    this.searchQuery = '';
+    this.searchHits = [];
+    this.searchHitIdx = -1;
+    if (this.searchBox) {
+      this.searchBox.value = '';
+      this.searchBox.classList.remove('is-invalid');
+    }
+    this.updateSearchNav();
+    this.updateFooter();
   }
 
   private async renderCanvas(): Promise<void> {
