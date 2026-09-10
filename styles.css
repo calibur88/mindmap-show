@@ -301,11 +301,67 @@
   font-size: 12px;
 }
 
+/* 三个操作按钮（手动刷新 / 打开详情 / 导出图片）整体居中 + 内部均匀分散：
+   actions 固定宽度（占父容器大部分），父容器用 justify-content: center 让
+   actions 居中；actions 内部用 space-between 让按钮首尾贴边、中间等距 */
 .mms-status-actions {
   display: flex;
   align-items: center;
-  justify-content: center;
+  justify-content: space-between;
   gap: 8px;
+  width: 80%;
+  max-width: 360px;
+}
+
+/* ============================ 内嵌保存栏 ============================ */
+/* 与 .mms-status-actions 互斥显示（点「导出图片」后展开）；
+   输入框撑满父容器（移动端友好），两个紧凑按钮靠右 */
+.mms-save-bar {
+  display: none;
+  flex-direction: column;
+  gap: 4px;
+  width: 100%;
+  padding: 4px 4px 6px;
+}
+.mms-save-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+}
+.mms-save-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  /* 移动端 16px 防止浏览器自动放大输入框；桌面端视觉一致 */
+  font-size: 13px;
+  padding: 4px 6px;
+  border: var(--mms-border);
+  border-radius: 4px;
+  background-color: var(--background-primary);
+  color: var(--text-normal);
+  font-family: var(--font-monospace);
+}
+.mms-save-input:focus {
+  outline: none;
+  border-color: var(--interactive-accent);
+  box-shadow: 0 0 0 1px var(--interactive-accent);
+}
+/* 错误行默认隐藏，has-error 时显示；避免占位导致布局抖动 */
+.mms-save-error {
+  display: none;
+  padding: 0 4px;
+  color: var(--text-error, #e35d5d);
+  font-size: 11px;
+  line-height: 1.4;
+  word-break: break-all;
+}
+.mms-save-bar.has-error .mms-save-error {
+  display: block;
+}
+/* saving 态禁用按钮：视觉反馈避免连点 */
+.mms-save-bar button[disabled] {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 /* ---------------------------------------------------------------- 中间栏 */

@@ -5,7 +5,7 @@
 
 import type { IOpener, IUiHost, IWarning } from '../host/types';
 import { el } from '../utils/dom';
-import { StatusCard } from './status-card';
+import { StatusCard, type ExportFlow } from './status-card';
 
 /** 标签统计项 */
 export interface ITagStat {
@@ -56,6 +56,8 @@ export class LeftPanel {
     private getCollapsedFolders: () => string[],
     /** 持久化折叠列表（静默写盘，不触发整栏重渲染） */
     private persistCollapsedFolders: (folders: string[]) => void,
+    /** 导出图片的两步回调（由 main 注入），UI 不感知 vault 实现 */
+    exportFlow: ExportFlow,
   ) {
     this.rootEl = el('div', { cls: 'mms-left-panel' });
     // ItemView.containerEl 是 .view-content（position: relative，无显式 height），
@@ -123,7 +125,7 @@ export class LeftPanel {
     this.warnSection.appendChild(this.warnBox);
     this.rootEl.appendChild(this.warnSection);
 
-    this.statusCard = new StatusCard(this.rootEl, uiHost, onRefresh, openDetailPanel);
+    this.statusCard = new StatusCard(this.rootEl, uiHost, onRefresh, openDetailPanel, exportFlow);
   }
 
   /** 注销状态卡监听并移除整栏 DOM。侧栏视图 onClose 必须调用 */

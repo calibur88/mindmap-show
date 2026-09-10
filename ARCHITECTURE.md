@@ -1,7 +1,7 @@
 # 项目整体架构
 
-> 本文是Mind Map Show（MMS）工程的权威架构说明。文档版本：v1.4（2026-09-10）
-> 插件版本：1.6.0 · 语法版本：`.mms` v1.4 · 最低依赖：Obsidian1.4.0 · 语言：TypeScript5.7（严格模式）
+> 本文是Mind Map Show（MMS）工程的权威架构说明。文档版本：v1.5（2026-09-10）
+> 插件版本：1.7.0 · 语法版本：`.mms` v1.4 · 最低依赖：Obsidian1.4.0 · 语言：TypeScript5.7（严格模式）
 
 ## 1. 项目定位
 
@@ -80,13 +80,14 @@ main.ts                      装配：new适配器 → new索引 → registerVie
  ├─ render/
  │   ├─ dom/index.ts         探索视图（DocumentFragment；指令样式／折叠徽标／调试叠加／事件委托）
  │   ├─ svg/index.ts         全景视图（SVGElement；指令样式／折叠徽标／调试叠加／事件委托）
- │   ├─ shared/edges.ts      两种视图共用的连线路径（line／curve）
+ │   ├─ svg-export.ts        SVG导出（buildExportSvg：复用全景渲染器＋内联样式＋xmlns，产出可独立打开的文件）
+ │   ├─ shared/edges.ts      两种视图共用的连线路径（line／curve／elbow）
  │   ├─ shared/extensions.ts `!--`指令渲染期继承与语义→画法映射（KEY_RENDERERS／折叠剪枝／运行时）
  │   └─ canvas-viewport.ts   鼠标／触控视口与缩放
  ├─ ui/
  │   ├─ left-panel.ts        标签云＋搜索栏＋文件树（折叠持久化）＋调试信息＋状态卡
  │   ├─ right-panel.ts       节点详情／注释／标签／引用链／入链／出链（三卡条目高亮＋两段式跳转）
- │   └─ status-card.ts       底部操作条：刷新＋查看详情
+ │   └─ status-card.ts       底部操作条：手动刷新＋打开详情＋导出图片（内嵌保存栏＋状态机）
  ├─ views/
  │   ├─ mms-view.ts          FileView，接管`.mms`扩展名
  │   ├─ side-view.ts         ItemView，挂左侧sidebar
@@ -195,6 +196,18 @@ vault 事件链路（500毫秒防抖）：
    高亮后→openSource跳源码行（入链跳来源节点、出链跳本文件`<=>`行）
 ```
 
+SVG导出链路（左栏状态卡「导出图片」）：
+
+```
+点击「导出图片」→ StatusCard 调 exportFlow.requestExport()（main注入）
+   → resolveExportTarget 三级探测当前文件（最近leaf的FileView.file → getActiveFile → selection兜底）
+   → index.getDoc(filePath) → buildExportSvg（复用全景渲染器＋内联样式＋xmlns）
+   → 展开保存栏（默认路径 export/<源文件名>.svg）
+确认 → StatusCard 调 exportFlow.confirmSave(path, svg)（main实现）
+   → normalizePath + 补 .svg + 逐层 createFolder + 覆盖Modal
+   → vault.create / vault.modify → new Notice；失败 reject 由状态卡行内显示
+```
+
 画布工具栏（两行布局，安卓适配）：上行文件名＋标签区（超3个折叠为「+N」＋展开/收起按钮，默认收起防溢出，切换文件重置）；下行节点搜索框＋视图按钮（重置视图/探索/全景）。搜索词与焦点在重渲染时保留（rescan不打断输入）。
 
 状态存放说明：
@@ -245,6 +258,6 @@ npx vitest run                                          # 197例单测
 
 ## 6. 现状
 
-**已实现**：`.mms`语法v1.4全量解析（frontmatter（含`mms_tags`YAML块列表写法）／标题节点／`--`子节点／正文／`**`注释／`<=>`跨边／`::`节点引用／`![[]]`嵌入／`!--`节点级指令与`<**`行尾注释）；指令默认绑定／`<--`目标寻址（前向引用＋最近距离）／同key冲突裁决／白名单拦截（清单外key记`directive-unknown-key`不存储）／`directiveBindings`行索引（供写回定位）；渲染落地——`KEY_RENDERERS`语义→画法映射（7样式key×DOM/SVG双画法＋值校验防注入）、`createDirectiveRuntime`运行时（继承求值／连线样式／折叠剪枝）、行为类三key接交互层（折叠徽标点击写回文档`collapsed`指令行——持久化即文档、auto补齐节点不提供折叠，调试叠加，锁定禁点击选中＋置灰）；跳级补空节点、缺根与多根告警、同父同名合并；跨文件引用与节点引用回填、出链与入链登记；四方向布局（`TB`／`BT`／`LR`／`RL`）与三种连线样式（`line`／`curve`／`elbow`）；探索视图与全景视图双画法（两视图节点点击均走`MmsSelection`选中总线联动右栏、折叠徽标均走同一条文档写回管线、节点事件均按事件委托实现——SVG图元是一等DOM，全景视图交互按需接入）；画布工具栏两行布局（标签折叠「+N」＋节点搜索定位——全文本检索、命中循环导航、`centerOnElement`视口居中）；鼠标与触控视口；左sidebar文件面板（标签云／文件搜索／文件树／调试信息／状态卡）；右侧详情面板（正文／注释／标签／引用链／入链／出链／嵌入资源／打开源码）；vault事件防抖自动重扫；同文件标签页复用与行号定位；9项设置与防抖自动刷新；ribbon图标与3条命令。
+**已实现**：`.mms`语法v1.4全量解析（frontmatter（含`mms_tags`YAML块列表写法）／标题节点／`--`子节点／正文／`**`注释／`<=>`跨边／`::`节点引用／`![[]]`嵌入／`!--`节点级指令与`<**`行尾注释）；指令默认绑定／`<--`目标寻址（前向引用＋最近距离）／同key冲突裁决／白名单拦截（清单外key记`directive-unknown-key`不存储）／`directiveBindings`行索引（供写回定位）；渲染落地——`KEY_RENDERERS`语义→画法映射（7样式key×DOM/SVG双画法＋值校验防注入）、`createDirectiveRuntime`运行时（继承求值／连线样式／折叠剪枝）、行为类三key接交互层（折叠徽标点击写回文档`collapsed`指令行——持久化即文档、auto补齐节点不提供折叠，调试叠加，锁定禁点击选中＋置灰）；跳级补空节点、缺根与多根告警、同父同名合并；跨文件引用与节点引用回填、出链与入链登记；四方向布局（`TB`／`BT`／`LR`／`RL`）与三种连线样式（`line`／`curve`／`elbow`）；探索视图与全景视图双画法（两视图节点点击均走`MmsSelection`选中总线联动右栏、折叠徽标均走同一条文档写回管线、节点事件均按事件委托实现——SVG图元是一等DOM，全景视图交互按需接入）；画布工具栏两行布局（标签折叠「+N」＋节点搜索定位——全文本检索、命中循环导航、`centerOnElement`视口居中）；鼠标与触控视口；左sidebar文件面板（标签云／文件搜索／文件树／调试信息／状态卡——手动刷新＋打开详情＋导出图片，导出走内嵌保存栏与`vault`写入、桌面移动统一）；右侧详情面板（正文／注释／标签／引用链／入链／出链／嵌入资源／打开源码）；SVG导出（`buildExportSvg`基于全景渲染器、内联样式与`xmlns`，目标文件三级探测）；vault事件防抖自动重扫；同文件标签页复用与行号定位；9项设置与防抖自动刷新；ribbon图标与3条命令。
 
 **规划**：仓库未设TODO文件，未落地能力见[CHANGELOG.md](CHANGELOG.md)「已知限制」与[docs/mms-语言规范.md](docs/mms-语言规范.md)§11.2。

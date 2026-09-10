@@ -3,13 +3,14 @@
  * @description 插件入口。只做装配：宿主适配器 → 索引/选中总线 → 视图注册 → 命令/ribbon
  */
 
-import { Plugin, TFile, TFolder } from 'obsidian';
+import { Modal, Notice, Plugin, TFile, TFolder, normalizePath } from 'obsidian';
 import { MmsIndex } from './controller/refresh';
 import { MmsSelection } from './controller/selection';
 import { parseMms } from './core/parser';
 import { ObsidianOpener } from './host/obsidian/opener';
 import { ObsidianUiHost } from './host/obsidian/ui-host';
 import { ObsidianVaultHost } from './host/obsidian/vault';
+import { buildExportSvg } from './render/svg-export';
 import { DEFAULT_SETTINGS } from './settings/defaults';
 import type { MmsSettings } from './settings/schema';
 import { MMS_DETAIL_VIEW_TYPE, MmsDetailView } from './views/detail-view';
@@ -25,6 +26,8 @@ export default class MmsPlugin extends Plugin {
   settings: MmsSettings = { ...DEFAULT_SETTINGS };
 
   private index: MmsIndex | null = null;
+  /** 当前选中/打开的脑图文件总线。MmsView 写入，右栏详情面板与本插件的导出读取 */
+  private selection: MmsSelection | null = null;
   private readonly settingsListeners: (() => void)[] = [];
   private settingsTimer: number | null = null;
   /** 防抖窗口内尚有未落盘的设置变更 */
@@ -44,6 +47,7 @@ export default class MmsPlugin extends Plugin {
     const index = new MmsIndex(vaultHost, uiHost);
     const selection = new MmsSelection();
     this.index = index;
+    this.selection = selection;
 
     this.registerView(
       MMS_VIEW_TYPE,
@@ -70,6 +74,11 @@ export default class MmsPlugin extends Plugin {
           getSettings: () => this.settings,
           onSettingsChange: (fn) => this.onSettingsChange(fn),
           openDetailPanel: () => void this.openDetailPanel(),
+          // 导出图片两步回调打包成一个对象透传，UI / SideViewDeps 都不感知 vault
+          exportFlow: {
+            requestExport: () => this.requestExport(),
+            confirmSave: (path, svg) => this.confirmSave(path, svg),
+          },
           getCollapsedFolders: () => this.settings.collapsedFolders,
           persistCollapsedFolders: (folders) =>
             this.updateSettingsSilently({ collapsedFolders: folders }),
@@ -149,6 +158,7 @@ export default class MmsPlugin extends Plugin {
     if (this.settingsDirty) void this.saveData(this.settings);
     this.settingsListeners.length = 0;
     this.index = null;
+    this.selection = null;
   }
 
   /** 合并设置并安排防抖落盘与广播。非法输入由设置面板在调用前拦截 */
@@ -304,7 +314,7 @@ export default class MmsPlugin extends Plugin {
     else await leaf.setViewState({ type: MMS_SIDE_VIEW_TYPE, active: true });
   }
 
-  /** 状态卡/命令入口：唤起右侧详情面板，已打开时聚焦即可 */
+  /** 唤起右侧详情面板：已打开时聚焦即可 */
   async openDetailPanel(): Promise<void> {
     const existing = this.app.workspace.getLeavesOfType(MMS_DETAIL_VIEW_TYPE);
     if (existing.length > 0) {
@@ -314,6 +324,140 @@ export default class MmsPlugin extends Plugin {
     const leaf = this.app.workspace.getRightLeaf(false);
     if (!leaf) return;
     await leaf.setViewState({ type: MMS_DETAIL_VIEW_TYPE, active: true });
+  }
+
+  /**
+   * 判定当前该导出哪个 .mms 文件。三级探测，全部不依赖 view 实例：
+   *
+   * 1. 最近活跃 leaf 上的 FileView.file —— 覆盖多标签切换（切回已加载的 tab
+   *    不会重触发 onLoadFile，selection 可能是旧值，leaf.file 才是实时的）
+   * 2. workspace.getActiveFile() —— 活跃文件本身是 .mms 的情况
+   * 3. selection 总线的 filePath —— 与右栏详情面板同源，兜底
+   *
+   * 不用 `getLeavesOfType(MMS_VIEW_TYPE)[0]`：数组首项未必是活跃项，
+   * 且 workspace 恢复布局时后台 leaf 的 view 可能尚未构造完，
+   * `instanceof MmsView` 会误判为「不是脑图视图」
+   */
+  private resolveExportTarget(): string | null {
+    // 鸭子类型读 file：FileView.file 是公开属性，避免类引用判定
+    const leafView = this.app.workspace.getMostRecentLeaf()?.view as { file?: { path?: string; extension?: string } | null } | null;
+    const leafFile = leafView?.file;
+    if (leafFile?.path && leafFile.extension === 'mms') return leafFile.path;
+
+    const activeFile = this.app.workspace.getActiveFile();
+    if (activeFile?.extension === 'mms') return activeFile.path;
+
+    return this.selection?.get().filePath ?? null;
+  }
+
+  /**
+   * 导出第一步：取 doc 生成 SVG 并返回默认保存路径。
+   * 找不到文件 / 索引未同步一律 throw，状态卡用 try/catch 显示行内错误
+   */
+  private requestExport(): { defaultPath: string; svg: string } {
+    const filePath = this.resolveExportTarget();
+    if (!filePath) throw new Error('请先在中间栏打开一个 .mms 文件');
+    const doc = this.index?.getDoc(filePath);
+    if (!doc) throw new Error('索引未同步，请点「手动刷新」');
+    const svg = buildExportSvg(doc, {
+      lineWidth: this.settings.panoramaLineWidth,
+      crossLineWidth: this.settings.crossLineWidth,
+      lineStyle: doc.lineStyle,
+      nodeGap: this.settings.panoramaNodeGap,
+      levelGap: this.settings.panoramaLevelGap,
+    });
+    // 默认路径 = `<vault 根>/export/<源文件名>.svg`，目录不存在由 confirmSave 创建
+    const baseName = filePath.replace(/\.mms$/i, '').split('/').pop() || 'mindmap';
+    return {
+      defaultPath: `export/${baseName}.svg`,
+      svg,
+    };
+  }
+
+  /**
+   * 导出第二步：把 SVG 写入用户指定的路径。
+   * 流程：normalize → 补 .svg 后缀 → 逐层 createFolder → 覆盖确认 → vault.create / vault.modify
+   * 任意步骤失败一律 throw，状态卡显示行内错误并保持展开
+   */
+  private async confirmSave(rawPath: string, svg: string): Promise<void> {
+    let path = rawPath.trim();
+    if (!path) throw new Error('路径不能为空');
+    path = normalizePath(path);
+    while (path.startsWith('/')) path = path.slice(1);
+    if (!path || path === '/') throw new Error('路径非法');
+    if (path.includes('..')) throw new Error('路径不允许包含 ..');
+    if (!path.toLowerCase().endsWith('.svg')) path += '.svg';
+
+    // 逐层 createFolder：Obsidian 没 mkdir -p，按段判存在后建
+    // 并发下 createFolder 可能抛「已存在」，被 catch 兜底
+    const parts = path.split('/').slice(0, -1);
+    let cur = '';
+    for (const seg of parts) {
+      cur = cur ? `${cur}/${seg}` : seg;
+      if (!this.app.vault.getAbstractFileByPath(cur)) {
+        try {
+          await this.app.vault.createFolder(cur);
+        } catch (err) {
+          if (!(err instanceof Error) || !/exist/i.test(err.message)) throw err;
+        }
+      }
+    }
+
+    // 覆盖确认：取消按 throw Error 处理，状态卡显示行内错误保持展开
+    const existing = this.app.vault.getAbstractFileByPath(path);
+    if (existing) {
+      const ok = await this.confirmOverwrite(path);
+      if (!ok) throw new Error('已取消：目标文件已存在');
+    }
+
+    if (existing instanceof TFile) {
+      await this.app.vault.modify(existing, svg);
+    } else {
+      await this.app.vault.create(path, svg);
+    }
+    new Notice(`SVG 已保存：${path}`);
+  }
+
+  /**
+   * 覆盖确认 Modal：返回 Promise<boolean>，点 × 也按取消处理避免挂起。
+   * 用 inline 匿名类保持局部性，避免在 src/views 里再加 ConfirmModal.ts
+   */
+  private confirmOverwrite(path: string): Promise<boolean> {
+    return new Promise((resolve) => {
+      let resolved = false;
+      const decide = (ok: boolean): void => {
+        if (resolved) return;
+        resolved = true;
+        resolve(ok);
+      };
+      class OverwriteModal extends Modal {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        constructor(app: any) {
+          super(app);
+        }
+        onOpen(): void {
+          const { contentEl } = this;
+          contentEl.empty();
+          contentEl.createEl('h3', { text: '文件已存在' });
+          contentEl.createEl('p', { text: `目标路径已存在，是否覆盖？\n${path}` });
+          const row = contentEl.createDiv({ cls: 'mms-modal-buttons' });
+          const cancelBtn = row.createEl('button', { text: '取消' });
+          cancelBtn.addEventListener('click', () => {
+            decide(false);
+            this.close();
+          });
+          const okBtn = row.createEl('button', { text: '覆盖', cls: 'mod-warning' });
+          okBtn.addEventListener('click', () => {
+            decide(true);
+            this.close();
+          });
+        }
+        onClose(): void {
+          decide(false);
+        }
+      }
+      new OverwriteModal(this.app).open();
+    });
   }
 
   /** onload 时（且仅一次）自动挂详情面板，避免用户以为右栏坏了 */
