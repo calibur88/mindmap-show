@@ -351,7 +351,7 @@ BEM 变体：
 | 右栏 | `.mms-info-card` `.mms-info-actions` `.mms-mini-btn` `.mms-empty-hint` |
 | 调试 | `.mms-warning-item` `.severity-info/warning/error` |
 | 状态卡 | `.mms-status-card` `.mms-status-label` `.mms-status-btn` `.state-synced/error` `.mms-status-actions` |
-| 导出保存栏 | `.mms-save-bar` `.mms-save-row` `.mms-save-input` `.mms-save-error` `.has-error` |
+| 导出保存栏 | `.mms-save-bar` `.mms-save-row` `.mms-save-input` |
 | 视口 | `.mms-canvas-body.is-panning`（拖拽期间防文字选中） |
 
 ---
