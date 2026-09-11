@@ -1,6 +1,7 @@
 # 开发与更新规范
 
-> 本文是项目的开发、版本、文档与git提交的统一规范，与[README.md](README.md)（总说明）、[ARCHITECTURE.md](ARCHITECTURE.md)（架构）配合阅读。文档版本：v1.1（2026-09-10）
+> 本文是项目的开发、版本、文档与git提交的统一规范，与[README.md](README.md)（总说明）、[ARCHITECTURE.md](ARCHITECTURE.md)（架构）配合阅读。文档版本：v1.1（2026-09-10）  
+> 文档批量更新时踩到一个工具坑——同一轮并行发出多个 Edit 调用，工具均返回 "Successfully edited"，但实际只有约一半落盘。复现确认是并发读-改-写竞争：多个 Edit 基于同一份旧内容各自修改再写回，后写覆盖先写，中间几处被静默丢弃。
 
 ## 1. 文档地图
 
