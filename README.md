@@ -125,8 +125,9 @@ mindmap-show/
 
 ## License
 
-许可类型：MIT许可证，附加商业使用限制。
+许可类型：个人授权协议（非商业源码可见许可）。
 
-特殊限制：未经书面许可，不得将本插件或其衍生品用于商业分发或商业服务。完整条款见[LICENSE](LICENSE)。
-
-版权归属与联系方式：见[LICENSE](LICENSE)（版权方calibur88及联系邮箱）与`manifest.json`的`author`／`authorUrl`字段。
+- 非商业用途：个人、教育、非营利组织及其他非商业目的可免费使用、复制、修改、分发，需保留版权与许可声明。
+- 商业用途：需事先获得作者书面授权。未经书面许可，不得将本插件或其衍生品用于商业分发或商业服务。
+- 完整条款见 [LICENSE](LICENSE)。
+- 版权归属与联系方式：见 [LICENSE](LICENSE) 与 `manifest.json` 的 `author` / `authorUrl` 字段。
