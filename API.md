@@ -208,7 +208,7 @@ interface IBuildEdgesOptions {
 
 | 类 | 用途 |
 |---|---|
-| `LeftPanel(container, opener, uiHost, onRefresh, onSelectTag, openDetailPanel, getCollapsedFolders, persistCollapsedFolders, treeOps)` | 左 sidebar 全部 UI：标签栏 / 搜索栏 / 文件树（递归目录树：多级目录逐级展开/折叠，同级目录在前文件在后、UTF-8 字节序排序；折叠状态经 `getCollapsedFolders`／`persistCollapsedFolders` 读写 `settings.collapsedFolders`，箭头`▸`/`▾`指示，局部更新不重绘整树）/ 标题栏「+」「−」按钮（共用就地输入行，经 `treeOps` 新增/删除 .mms）/ 调试信息 / 状态卡；`destroy()` 注销状态卡监听并移除 DOM |
+| `LeftPanel(container, opener, uiHost, onRefresh, onSelectTag, openDetailPanel, getCollapsedFolders, persistCollapsedFolders, exportFlow, treeOps)` | 左 sidebar 全部 UI：标签栏 / 搜索栏 / 文件树（递归目录树：多级目录逐级展开/折叠，同级目录在前文件在后、UTF-8 字节序排序；折叠状态经 `getCollapsedFolders`／`persistCollapsedFolders` 读写 `settings.collapsedFolders`，箭头`▸`/`▾`指示，局部更新不重绘整树）/ 标题栏「+」「−」按钮（共用就地输入行，经 `treeOps` 新增/删除 .mms）/ 调试信息 / 状态卡；`destroy()` 注销状态卡监听并移除 DOM |
 | `RightPanel(container, actions)` | 右栏节点详情：来源文件 / 当前节点 / 标签 / 引用链（选中节点的`<=>`跨边＋`::`定位合并展示，断链灰显）/ 入链（`<=>`指向该节点的来源，同文件显示为「本文件」）/ 出链（文件级，同文件引用不进此卡）/ 节点注释 / 嵌入资源，`actions` 提供 `openSource` 与 `openAndSelect` 跳转；`renderEmpty(hint?)` 支持降级提示。三卡条目统一交互：单击高亮（互斥、再点取消、重渲染自动清除），「跳转」按钮两段式——未高亮跳节点（入链跳来源节点）、高亮后跳源码行（出链跳本文件`<=>`行） |
 | `StatusCard(container, uiHost, onRefresh, openDetailPanel, flow)` | 左栏底部状态卡（手动刷新／打开详情／导出图片三个按钮；点「导出图片」展开内嵌保存栏——输入框＋确认＋取消＋行内错误，状态机`idle／saving／error`＋`confirming`防抖；`flow`为`IExportFlow`两步回调：`requestExport(): {defaultPath, svg}`错误throw、`confirmSave(path, svg): Promise<void>`失败reject）；`destroy()` 注销 `onStatus` 监听 |
 | `CanvasViewport` | 画布视口（鼠标 / 触控 + 缩放）；`centerOnElement(el)` 平移视口使节点居中（缩放不变，搜索定位用） |
