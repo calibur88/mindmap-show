@@ -1,6 +1,6 @@
 # API 索引
 
-> Mind Map Show (MMS) - Obsidian 思维导图插件。文档版本：v1.4（2026-09-10）
+> Mind Map Show (MMS) - Obsidian 思维导图插件。文档版本：v1.5（2026-09-11）
 
 本文档列出插件版本1.8.0用到的Obsidian官方API与插件自身API。仅记录真实用到的，不写"未来可能用到的"。
 
@@ -208,9 +208,9 @@ interface IBuildEdgesOptions {
 
 | 类 | 用途 |
 |---|---|
-| `LeftPanel(container, opener, uiHost, onRefresh, onSelectTag, openDetailPanel, getCollapsedFolders, persistCollapsedFolders)` | 左 sidebar 全部 UI：标签栏 / 搜索栏 / 文件树（折叠状态经 `getCollapsedFolders`／`persistCollapsedFolders` 读写 `settings.collapsedFolders`，箭头`▸`/`▾`指示，局部更新不重绘整树）/ 调试信息 / 状态卡；`destroy()` 注销状态卡监听并移除 DOM |
+| `LeftPanel(container, opener, uiHost, onRefresh, onSelectTag, openDetailPanel, getCollapsedFolders, persistCollapsedFolders, treeOps)` | 左 sidebar 全部 UI：标签栏 / 搜索栏 / 文件树（递归目录树：多级目录逐级展开/折叠，同级目录在前文件在后、UTF-8 字节序排序；折叠状态经 `getCollapsedFolders`／`persistCollapsedFolders` 读写 `settings.collapsedFolders`，箭头`▸`/`▾`指示，局部更新不重绘整树）/ 标题栏「+」「−」按钮（共用就地输入行，经 `treeOps` 新增/删除 .mms）/ 调试信息 / 状态卡；`destroy()` 注销状态卡监听并移除 DOM |
 | `RightPanel(container, actions)` | 右栏节点详情：来源文件 / 当前节点 / 标签 / 引用链（选中节点的`<=>`跨边＋`::`定位合并展示，断链灰显）/ 入链（`<=>`指向该节点的来源，同文件显示为「本文件」）/ 出链（文件级，同文件引用不进此卡）/ 节点注释 / 嵌入资源，`actions` 提供 `openSource` 与 `openAndSelect` 跳转；`renderEmpty(hint?)` 支持降级提示。三卡条目统一交互：单击高亮（互斥、再点取消、重渲染自动清除），「跳转」按钮两段式——未高亮跳节点（入链跳来源节点）、高亮后跳源码行（出链跳本文件`<=>`行） |
-| `StatusCard(container, uiHost, onRefresh, openDetailPanel, flow)` | 左栏底部状态卡（手动刷新／打开详情／导出图片三个按钮；点「导出图片」展开内嵌保存栏——输入框＋确认＋取消＋行内错误，状态机`idle／saving／error`＋`confirming`防抖；`flow`为`ExportFlow`两步回调：`requestExport(): {defaultPath, svg}`错误throw、`confirmSave(path, svg): Promise<void>`失败reject）；`destroy()` 注销 `onStatus` 监听 |
+| `StatusCard(container, uiHost, onRefresh, openDetailPanel, flow)` | 左栏底部状态卡（手动刷新／打开详情／导出图片三个按钮；点「导出图片」展开内嵌保存栏——输入框＋确认＋取消＋行内错误，状态机`idle／saving／error`＋`confirming`防抖；`flow`为`IExportFlow`两步回调：`requestExport(): {defaultPath, svg}`错误throw、`confirmSave(path, svg): Promise<void>`失败reject）；`destroy()` 注销 `onStatus` 监听 |
 | `CanvasViewport` | 画布视口（鼠标 / 触控 + 缩放）；`centerOnElement(el)` 平移视口使节点居中（缩放不变，搜索定位用） |
 
 左栏文件搜索的行为契约（`LeftPanel` 内部状态 `keyword`，空串表示不过滤）：
@@ -254,16 +254,28 @@ class MmsPlugin extends Plugin {
 }
 ```
 
-SVG导出（`src/main.ts`，注入`IMmsSideViewDeps.exportFlow`）：
+SVG导出（`src/main.ts`，注入`IMmsSideViewDeps.exportFlow`，类型为`IExportFlow`，定义见`src/host/types.ts`）：
 
 ```ts
-interface ExportFlow {
+interface IExportFlow {
   requestExport(): { defaultPath: string; svg: string };   // 取当前 .mms 生成 SVG；错误 throw
   confirmSave(path: string, svg: string): Promise<void>;   // normalize→补 .svg→逐层createFolder→覆盖Modal→vault.create/modify；失败 reject
 }
 ```
 
 `requestExport` 用 `resolveExportTarget()` 三级探测当前文件（最近leaf的`FileView.file`→`getActiveFile()`→`selection`兜底），不依赖视图实例。
+
+文件树操作（`src/main.ts` 实现、`IMmsSideViewDeps.treeOps` 注入，类型 `ITreeOps`／`TreeOpResult` 定义见`src/host/types.ts`）：
+
+```ts
+interface ITreeOps {
+  createMmsFile(absPath: string): Promise<TreeOpResult>;   // 相对 vault 根、仅 .mms；已存在不覆盖、递归建父目录；成功重扫并打开新文件
+  deleteMmsFile(absPath: string): Promise<TreeOpResult>;   // 删除文件；找不到清空输入并保留输入行
+}
+type TreeOpResult =
+  | { ok: true; path: string }
+  | { ok: false; reason: 'invalid' | 'exists' | 'not-found' | 'failed'; message: string };
+```
 
 设置变更走 400ms 防抖：窗口结束后先 `saveData` 落盘，再广播给各视图按新值重绘，最后触发 `index.refresh()` 整库重扫。
 `updateSettingsSilently` 供折叠等纯偏好操作即时落盘用，跳过广播与重扫（左栏自行局部更新）。
@@ -334,7 +346,8 @@ BEM 变体：
 | 视图 | `.mms-explore-*` / `.mms-panorama-*` |
 | 节点 | `.mms-dom-node` / `.mms-svg-node` |
 | 边 | `.mms-edge` `.mms-edge-tree` `.mms-edge-cross` |
-| 左栏 | `.mms-left-panel` `.mms-section-tag` `.mms-section-tree` `.mms-section-warn` |
+| 左栏 | `.mms-left-panel` `.mms-section-tag` `.mms-section-tree` `.mms-section-warn` `.mms-tree-header` `.mms-mini-btn.mms-tree-btn` `.mms-tree-input-bar` `.mms-tree-input` `.mms-folder-children` |
+| 错误反馈 | `.mms-save-input.is-invalid` 输入框红边框（文件树输入行与导出图片保存栏统一：聚焦红优先，再次输入／切换模式／收起时清除） |
 | 右栏 | `.mms-info-card` `.mms-info-actions` `.mms-mini-btn` `.mms-empty-hint` |
 | 调试 | `.mms-warning-item` `.severity-info/warning/error` |
 | 状态卡 | `.mms-status-card` `.mms-status-label` `.mms-status-btn` `.state-synced/error` `.mms-status-actions` |
