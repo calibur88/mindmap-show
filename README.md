@@ -105,7 +105,7 @@ mindmap-show/
 ├─ docs/                   .mms语言规范
 ├─ test/                   单测目录（镜像src/结构，197例）
 ├─ styles.css              全部样式集中一处
-├─ manifest.json           插件清单（版本1.7.1）
+├─ manifest.json           插件清单（版本1.8.0）
 └─ test-vault-local/       本地测试vault（local后缀＝本地专用，不入库）
 ```
 

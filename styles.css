@@ -189,6 +189,90 @@
 
 /* ---------------------------------------------------------- 左栏：文件树 */
 
+/* 文件管理器标题栏：两端对齐（左标题、右 [+][−]），整行高度与按钮同高 */
+.mms-tree-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 36px;
+  margin: 0 0 2px;
+}
+.mms-tree-title {
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+.mms-tree-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex: 0 0 auto;
+}
+/* 复合选择器：优先级 0,2,0，稳定覆盖后定义的 .mms-mini-btn（避免 padding/font-size 被抢） */
+.mms-mini-btn.mms-tree-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 36px;
+  min-height: 36px;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  font-size: 16px; /* 图标字号 15~17px */
+  line-height: 1;
+  /* 减号用 U+2212 与 + 等宽对称 */
+  font-family: var(--font-monospace);
+}
+.mms-mini-btn.mms-tree-btn.is-active {
+  border-color: var(--interactive-accent);
+  color: var(--interactive-accent);
+}
+
+/* 就地输入行：标题栏正下方，+ / − 复用；输入框样式抄 .mms-save-input */
+.mms-tree-input-bar {
+  display: none;
+  width: 100%;
+  padding: 2px 0 6px;
+}
+.mms-tree-input-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+}
+.mms-tree-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  /* 移动端 13px 防止浏览器自动放大输入框 */
+  font-size: 13px;
+  padding: 4px 6px;
+  border: var(--mms-border);
+  border-radius: 4px;
+  background-color: var(--background-primary);
+  color: var(--text-normal);
+  font-family: var(--font-monospace);
+}
+.mms-tree-input:focus {
+  outline: none;
+  border-color: var(--interactive-accent);
+  box-shadow: 0 0 0 1px var(--interactive-accent);
+}
+/* 错误统一红边框（与导出保存栏同规则） */
+.mms-tree-input.is-invalid,
+.mms-tree-input.is-invalid:focus {
+  border-color: var(--text-error, #e35d5d);
+  box-shadow: 0 0 0 1px var(--text-error, #e35d5d);
+  outline: none;
+}
+.mms-tree-input-bar button[disabled] {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 .mms-file-tree {
   margin: 0;
   padding: 0;
@@ -232,7 +316,7 @@
   justify-content: space-between;
   gap: 6px;
   min-height: 28px;
-  padding: 4px 6px 4px 22px;
+  padding: 4px 6px;
   border-radius: 4px;
   cursor: pointer;
   font-size: 13px;
@@ -258,7 +342,12 @@
   font-size: 11px;
 }
 
-/* 文件夹子文件容器：折叠态整块隐藏（toggle 局部更新，不重绘整树） */
+/* 文件夹子文件容器：递归树逐层缩进（嵌套 childrenBox 自动累加）；
+   折叠态整块隐藏（toggle 局部更新，不重绘整树） */
+.mms-folder-children {
+  padding-left: 14px;
+}
+
 .mms-folder-children.is-collapsed {
   display: none;
 }
@@ -346,17 +435,12 @@
   border-color: var(--interactive-accent);
   box-shadow: 0 0 0 1px var(--interactive-accent);
 }
-/* 错误行默认隐藏，has-error 时显示；避免占位导致布局抖动 */
-.mms-save-error {
-  display: none;
-  padding: 0 4px;
-  color: var(--text-error, #e35d5d);
-  font-size: 11px;
-  line-height: 1.4;
-  word-break: break-all;
-}
-.mms-save-bar.has-error .mms-save-error {
-  display: block;
+/* 错误统一红边框：聚焦时红色优先，box-shadow 模拟加粗避免 1px 布局抖动 */
+.mms-save-input.is-invalid,
+.mms-save-input.is-invalid:focus {
+  border-color: var(--text-error, #e35d5d);
+  box-shadow: 0 0 0 1px var(--text-error, #e35d5d);
+  outline: none;
 }
 /* saving 态禁用按钮：视觉反馈避免连点 */
 .mms-save-bar button[disabled] {
@@ -639,6 +723,17 @@
   .mms-canvas-toolbar .mms-mini-btn {
     min-height: 32px;
     padding: 4px 12px;
+  }
+
+  /* 文件管理器标题栏：桌面 36px → 移动端 44px 触摸目标 */
+  .mms-tree-header {
+    min-height: 44px;
+  }
+  .mms-mini-btn.mms-tree-btn {
+    min-width: 44px;
+    min-height: 44px;
+    width: 44px;
+    height: 44px;
   }
 }
 

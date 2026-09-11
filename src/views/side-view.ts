@@ -5,10 +5,9 @@
 
 import { ItemView, WorkspaceLeaf } from 'obsidian';
 import type { MmsIndex } from '../controller/refresh';
-import type { IOpener, IUiHost } from '../host/types';
+import type { IExportFlow, IOpener, ITreeOps, IUiHost } from '../host/types';
 import type { MmsSettings } from '../settings/schema';
 import { LeftPanel, type IScanSnapshot } from '../ui/left-panel';
-import type { ExportFlow } from '../ui/status-card';
 
 /** 侧栏视图类型标识。registerView / setViewState / getLeavesOfType 共用 */
 export const MMS_SIDE_VIEW_TYPE = 'mms-side-view';
@@ -28,7 +27,9 @@ export interface IMmsSideViewDeps {
    * - confirmSave：reject 错误（路径非法 / 覆盖被拒 / 写盘异常）
    * 成功路径无返回值，main 内部 new Notice；UI 不重复弹
    */
-  exportFlow: ExportFlow;
+  exportFlow: IExportFlow;
+  /** 文件树新增/删除回调，单对象透传（main 注入，UI 不感知 vault） */
+  treeOps: ITreeOps;
   /** 读当前持久化的折叠文件夹列表（存于 data.json） */
   getCollapsedFolders: () => string[];
   /** 持久化折叠文件夹列表。静默写入：不触发整栏重渲染，滚动位置不受影响 */
@@ -72,6 +73,7 @@ export class MmsSideView extends ItemView {
       this.deps.getCollapsedFolders,
       this.deps.persistCollapsedFolders,
       this.deps.exportFlow,
+      this.deps.treeOps,
     );
     this.deps.index.onUpdate(this.boundRender);
     this.unsubscribeSettings = this.deps.onSettingsChange(this.boundRender);

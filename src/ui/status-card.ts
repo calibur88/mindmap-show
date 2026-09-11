@@ -1,48 +1,30 @@
 /**
  * @module ui/status-card
  * @description 左栏底部状态卡：手动刷新 / 打开详情 / 导出图片三个操作按钮，
- * 点击「导出图片」后在下方展开内嵌保存栏（输入框 + 确认 + 取消 + 行内错误提示）。
+ * 点击「导出图片」后在下方展开内嵌保存栏（输入框 + 确认 + 取消）。
  * 设计动机：移动端 Electron 不支持 `a[download]` + Blob URL 触发的系统保存对话框，
- * 改走 vault.create / vault.modify 直接写入 vault，桌面端与移动端统一体验
+ * 改走 vault.create / vault.modify 直接写入 vault，桌面端与移动端统一体验。
+ * 错误反馈统一用输入框红边框（.is-invalid），不弹 Notice、不显示错误行
  */
 
-import type { IUiHost, UiStatus } from '../host/types';
+import type { IExportFlow, IUiHost, UiStatus } from '../host/types';
 import { el } from '../utils/dom';
 
 const HINT_ERROR = '刷新失败，查看控制台';
 
-/**
- * 状态卡对外暴露的两步回调，main 注入具体实现，UI 不感知 vault。
- *
- * 拆成两步的原因：点导出按钮时只能立刻拿到 doc；确认保存时才有最终路径，
- * 中间允许用户改路径；写盘失败需保留 SVG 让用户改路径重试而不是从头生成
- *
- * 错误一律走 throw / reject：
- * - requestExport throw → 找不到文件 / 索引未同步 / buildExportSvg 异常
- * - confirmSave reject → 路径非法 / 覆盖被拒 / 写盘异常
- * 状态卡用 try/catch 显示行内错误，不弹 Notice；成功由 main 自己 new Notice
- */
-export interface ExportFlow {
-  /** 返回默认保存路径与已渲染好的 SVG 字符串；错误 throw */
-  requestExport(): { defaultPath: string; svg: string };
-  /** 写盘成功 resolve（main 内部已 new Notice），失败 reject */
-  confirmSave(path: string, svg: string): Promise<void>;
-}
-
-/** 状态机：默认按钮 / 保存中（按钮禁用防重复点） / 错误态（保持展开 + 错误提示） */
-type CardState = 'idle' | 'saving' | 'error';
+/** 状态机：默认按钮 / 保存中（按钮禁用防重复点） */
+type CardState = 'idle' | 'saving';
 
 export class StatusCard {
   private root: HTMLElement;
   private actions: HTMLElement;
   private label: HTMLElement;
 
-  /** 保存栏：输入框 + 确认 + 取消 + 行内错误行；默认 display: none */
+  /** 保存栏：输入框 + 确认 + 取消；默认 display: none */
   private saveBar: HTMLElement;
   private saveInput: HTMLInputElement;
   private saveConfirmBtn: HTMLButtonElement;
   private saveCancelBtn: HTMLButtonElement;
-  private saveError: HTMLElement;
 
   /** 当前保存栏内待写入的 svg；用户改路径时不会丢；cancel 后清空 */
   private pendingSvg: string | null = null;
@@ -63,7 +45,7 @@ export class StatusCard {
     private uiHost: IUiHost,
     onRefresh: () => void,
     openDetailPanel: () => void,
-    private flow: ExportFlow,
+    private flow: IExportFlow,
   ) {
     this.root = el('div', { cls: 'mms-status-card state-synced' });
     // 正常态不留文案，底栏只保留操作按钮；文案仅在刷新失败时出现
@@ -117,6 +99,8 @@ export class StatusCard {
         this.collapse();
       }
     });
+    // 再次输入清除红框
+    this.saveInput.addEventListener('input', () => this.saveInput.classList.remove('is-invalid'));
     this.saveConfirmBtn = el('button', {
       cls: 'mms-status-btn',
       text: '确认',
@@ -132,9 +116,7 @@ export class StatusCard {
     saveRow.appendChild(this.saveInput);
     saveRow.appendChild(this.saveConfirmBtn);
     saveRow.appendChild(this.saveCancelBtn);
-    this.saveError = el('div', { cls: 'mms-save-error' });
     this.saveBar.appendChild(saveRow);
-    this.saveBar.appendChild(this.saveError);
     this.root.appendChild(this.saveBar);
 
     // 双保险隐藏保存栏：CSS `.mms-save-bar` 默认 display:none，这里再以内联
@@ -171,16 +153,15 @@ export class StatusCard {
 
   /**
    * 用户点「导出图片」按钮。
-   * 错误（取数据失败）不展开输入栏，只在按钮行下显示行内红字——因为
-   * 此时既没有 svg 也没有默认路径，强行展开会让用户面对空表单
+   * 错误（取数据失败）不展开输入栏——此时既没有 svg 也没有默认路径，
+   * 强行展开会让用户面对空表单；错误由 requestExport throw，状态卡静默（无输入框可红）
    */
   private onExportClick(): void {
     if (this.state === 'saving') return;
     let payload: { defaultPath: string; svg: string };
     try {
       payload = this.flow.requestExport();
-    } catch (err) {
-      this.showError(err instanceof Error ? err.message : String(err));
+    } catch {
       return;
     }
     this.expandSaveBar(payload.defaultPath, payload.svg);
@@ -190,8 +171,7 @@ export class StatusCard {
   private expandSaveBar(defaultPath: string, svg: string): void {
     this.pendingSvg = svg;
     this.saveInput.value = defaultPath;
-    this.saveError.textContent = '';
-    this.saveBar.classList.remove('has-error');
+    this.saveInput.classList.remove('is-invalid');
     this.saveBar.style.display = 'flex';
     this.actions.style.display = 'none';
     this.state = 'idle';
@@ -215,51 +195,42 @@ export class StatusCard {
     if (!svg) return;
     const path = this.saveInput.value.trim();
     if (!path) {
-      this.showError('路径不能为空');
-      this.state = 'error';
+      this.setInvalid();
       return;
     }
     this.state = 'saving';
     this.setButtonsDisabled(true);
-    this.clearError();
+    this.saveInput.classList.remove('is-invalid');
     try {
       this.confirming = true;
       await this.flow.confirmSave(path, svg);
-      // 成功才收起；失败由 catch 显示错误并保持展开
+      // 成功才收起；失败由 catch 置红并保持展开
       this.collapse();
-    } catch (err) {
-      this.state = 'error';
-      this.showError(err instanceof Error ? err.message : String(err));
+    } catch {
+      this.setInvalid();
       // 让用户立即改路径重试，焦点回到输入框
       this.saveInput.focus();
     } finally {
       this.confirming = false;
-      // 失败态保持 error，收起态在 collapse 已置 idle
       if (this.state === 'saving') this.state = 'idle';
       this.setButtonsDisabled(false);
     }
   }
 
-  /** 取消按钮 / Esc 键触发：清空 pending svg，回到三按钮态 */
+  /** 取消按钮 / Esc 键触发：清空 pending svg，回到三按钮态（含清红框） */
   private collapse(): void {
     this.pendingSvg = null;
     this.state = 'idle';
     this.confirming = false;
-    this.saveBar.classList.remove('has-error');
-    this.saveError.textContent = '';
     this.saveInput.value = '';
+    this.saveInput.classList.remove('is-invalid');
     this.saveBar.style.display = 'none';
     this.actions.style.display = '';
   }
 
-  private showError(msg: string): void {
-    this.saveError.textContent = `⚠ ${msg}`;
-    this.saveBar.classList.add('has-error');
-  }
-
-  private clearError(): void {
-    this.saveError.textContent = '';
-    this.saveBar.classList.remove('has-error');
+  /** 输入框红框错误态：不弹 Notice、不显示错误行，聚焦时保持红 */
+  private setInvalid(): void {
+    this.saveInput.classList.add('is-invalid');
   }
 
   private setButtonsDisabled(disabled: boolean): void {

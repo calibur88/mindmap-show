@@ -258,3 +258,40 @@ export interface IUiHost {
   /** 最近一次 setStatus 的 detail 文本，用于 footer 与左栏底部状态卡显示 */
   getLastDetail(): string;
 }
+
+// ----------------------------------------------------- 跨层 UI 契约
+
+/**
+ * 文件树新增/删除操作结果。UI 按 reason 决定清理策略：
+ * - invalid：路径非法 → 红框（保留输入）
+ * - exists：新增时已存在 → 红框（保留输入）
+ * - not-found：删除时找不到 → 清空输入、保留输入行、红框
+ * - failed：底层操作异常 → 红框（保留输入）
+ * 成功返回新文件/被删文件的相对路径
+ */
+export type TreeOpResult =
+  | { ok: true; path: string }
+  | { ok: false; reason: 'invalid' | 'exists' | 'not-found' | 'failed'; message: string };
+
+/** 文件树 + / − 两步回调，main 注入实现（UI 不感知 vault） */
+export interface ITreeOps {
+  createMmsFile(absPath: string): Promise<TreeOpResult>;
+  deleteMmsFile(absPath: string): Promise<TreeOpResult>;
+}
+
+/**
+ * 状态卡导出图片的两步回调，main 注入具体实现，UI 不感知 vault。
+ * 拆成两步的原因：点导出按钮时只能立刻拿到 doc；确认保存时才有最终路径，
+ * 中间允许用户改路径；写盘失败需保留 SVG 让用户改路径重试而不是从头生成。
+ *
+ * 错误一律走 throw / reject：
+ * - requestExport throw → 找不到文件 / 索引未同步 / buildExportSvg 异常
+ * - confirmSave reject → 路径非法 / 覆盖被拒 / 写盘异常
+ * 状态卡用 try/catch 把输入框置红（.is-invalid），不弹 Notice；成功由 main 自己 new Notice
+ */
+export interface IExportFlow {
+  /** 返回默认保存路径与已渲染好的 SVG 字符串；错误 throw */
+  requestExport(): { defaultPath: string; svg: string };
+  /** 写盘成功 resolve（main 内部已 new Notice），失败 reject */
+  confirmSave(path: string, svg: string): Promise<void>;
+}
