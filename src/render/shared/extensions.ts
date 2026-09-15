@@ -12,6 +12,7 @@
 
 import {
   isBehaviorDirectiveKey,
+  isKnownDirectiveKey,
   KNOWN_DIRECTIVE_KEYS,
   type BehaviorDirectiveKey,
   type DirectiveKey,
@@ -73,8 +74,12 @@ export interface IKeyRenderer {
 /**
  * 渲染兼容性映射表（规范 §10.7）。行为类三个 key 接交互层，与画法无关，
  * 在表中无样式落点；line-color / line-width 作用于连线（两画法的连线均为 SVG
- * path，DOM 探索视图无对应的节点 CSS 属性）。同落点冲突时按本表声明顺序
- * 应用、后者覆盖前者（color 与 text-color 同落文字色，text-color 声明在后胜出）
+ * path，DOM 探索视图无对应的节点 CSS 属性）。
+ *
+ * 同落点冲突两级裁决（规范 §10.7「补充裁决」）：先看声明距离，由
+ * `resolveExtensions` 保证「自身 > 祖先链就近 > 文档级兜底」，远端同落点 key 不补齐；
+ * 同一层内再按本表声明顺序应用、后者覆盖前者（color 与 text-color 同落文字色，
+ * text-color 声明在后胜出）
  */
 export const KEY_RENDERERS: Readonly<Record<DirectiveKey, IKeyRenderer>> = {
   'color': { kind: 'style', domProp: 'color', svg: { target: 'text', prop: 'fill' }, normalize: normalizeColor },
@@ -94,6 +99,20 @@ const STYLE_KEY_ORDER: readonly DirectiveKey[] = KNOWN_DIRECTIVE_KEYS.filter(
   (key) => KEY_RENDERERS[key].kind === 'style',
 );
 
+/**
+ * 样式落点签名：同一落点可能被多个 key 声明（`color` 与 `text-color` 同落文字色）。
+ * 返回 null = 不落节点元素（行为类、只作用于连线的 line-color / line-width），
+ * 它们各自独立，不参与落点冲突
+ */
+function styleTargetOf(key: string): string | null {
+  if (!isKnownDirectiveKey(key)) return null;
+  const renderer = KEY_RENDERERS[key];
+  const dom = renderer.domProp ?? '-';
+  const svg = renderer.svg ? `${renderer.svg.target}:${renderer.svg.prop}` : '-';
+  if (dom === '-' && svg === '-') return null;
+  return `${dom}|${svg}`;
+}
+
 // ------------------------------------------------------------ 继承
 
 /**
@@ -101,6 +120,9 @@ const STYLE_KEY_ORDER: readonly DirectiveKey[] = KNOWN_DIRECTIVE_KEYS.filter(
  *
  * - 自身的 extensions 全部生效（含行为类）
  * - 样式类 key 缺失时沿祖先链就近补齐：自身有值优先，其次父链最近者
+ * - 同落点冲突按**声明距离**裁决：`color` 与 `text-color` 同落文字色，
+ *   更近的声明占住落点后，远端同落点 key 不再补齐——否则节点自身声明的
+ *   `color` 会被文档级兜底的 `text-color` 反向覆盖（同级并列时仍按映射表顺序裁决）
  * - 行为类 key（见 BEHAVIOR_DIRECTIVE_KEYS）不继承——父级的 collapsed 不影响子级
  * - 多父节点（同名合并）取第一条父链
  * - `base`（文档级 extensions）作为最低优先级兜底：祖先链查完仍缺失的 key 从中补齐
@@ -113,6 +135,26 @@ export function resolveExtensions(
   base?: Record<string, string>,
 ): Record<string, string> {
   const result: Record<string, string> = { ...(node.extensions ?? {}) };
+  /** 已被更近声明占用的落点签名 */
+  const claimed = new Set<string>();
+
+  const claim = (key: string): void => {
+    const target = styleTargetOf(key);
+    if (target !== null) claimed.add(target);
+  };
+  for (const key of Object.keys(result)) claim(key);
+
+  /** 从更远的一级补齐：key 缺失且落点未被更近声明占用才写入 */
+  const fillFrom = (ext: Record<string, string> | undefined): void => {
+    for (const [key, value] of Object.entries(ext ?? {})) {
+      if (isBehaviorDirectiveKey(key)) continue;
+      if (key in result) continue;
+      const target = styleTargetOf(key);
+      if (target !== null && claimed.has(target)) continue;
+      result[key] = value;
+      if (target !== null) claimed.add(target);
+    }
+  };
 
   const visited = new Set<string>([node.id]);
   let parentId = node.parentIds[0];
@@ -120,18 +162,11 @@ export function resolveExtensions(
     const parent = nodeMap.get(parentId);
     if (!parent || visited.has(parent.id)) break;
     visited.add(parent.id);
-
-    for (const [key, value] of Object.entries(parent.extensions ?? {})) {
-      if (isBehaviorDirectiveKey(key)) continue;
-      if (!(key in result)) result[key] = value;
-    }
+    fillFrom(parent.extensions);
     parentId = parent.parentIds[0];
   }
 
-  for (const [key, value] of Object.entries(base ?? {})) {
-    if (isBehaviorDirectiveKey(key)) continue;
-    if (!(key in result)) result[key] = value;
-  }
+  fillFrom(base);
   return result;
 }
 

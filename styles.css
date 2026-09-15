@@ -95,6 +95,24 @@
   text-transform: uppercase;
 }
 
+/* 带右侧操作按钮的区块标题行（如调试信息的「清空」）。
+   标题自身由 .mms-section-head 统一控制下边距，避免与按钮行叠出双倍间距 */
+.mms-section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--mms-gap);
+  margin-bottom: 6px;
+}
+
+.mms-section-head > .mms-section-title {
+  margin: 0;
+}
+
+.mms-warn-clear {
+  flex: 0 0 auto;
+}
+
 .mms-scroll {
   flex: 1 1 auto;
   min-height: 0;

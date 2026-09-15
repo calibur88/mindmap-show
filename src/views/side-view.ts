@@ -40,7 +40,15 @@ export interface IMmsSideViewDeps {
 export class MmsSideView extends ItemView {
   private leftPanel: LeftPanel | null = null;
   private activeTag: string | null = null;
-  private readonly boundRender = (): void => this.render();
+  /**
+   * 索引重扫完成（手动刷新 / 文件改动自动重扫 / 命令刷新）后的重绘。
+   * 与标签切换、设置重绘区分开：只有重扫才复位调试信息的「已清空」态，
+   * 让用户清空后仍能继续点文件、切标签而不被刷回旧告警
+   */
+  private readonly boundRender = (): void => {
+    this.leftPanel?.resetDebugInfo();
+    this.render();
+  };
   private unsubscribeSettings: (() => void) | null = null;
 
   constructor(leaf: WorkspaceLeaf, private deps: IMmsSideViewDeps) {

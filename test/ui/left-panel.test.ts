@@ -14,7 +14,7 @@ import {
 } from '../helpers/dom-stub';
 import { LeftPanel, buildFolderTree, compareUtf8 } from '../../src/ui/left-panel';
 import type { IFileStat } from '../../src/ui/left-panel';
-import type { IExportFlow, IOpener, ITreeOps, IUiHost } from '../../src/host/types';
+import type { IExportFlow, IOpener, ITreeOps, IUiHost, IWarning } from '../../src/host/types';
 
 installDomStub();
 
@@ -90,7 +90,13 @@ describe('buildFolderTree（递归目录树）', () => {
 
 // ---------------------------------------------------------------- 文件树渲染（DOM 替身）
 
-function makePanel(): { panel: LeftPanel; treeBox: StubElement } {
+function makePanel(onRefresh: () => void = () => {}): {
+  panel: LeftPanel;
+  treeBox: StubElement;
+  warnBox: StubElement;
+  warnClearBtn: StubElement;
+  rootEl: StubElement;
+} {
   const uiHost: IUiHost = {
     setStatus: () => {},
     onStatus: () => {},
@@ -111,7 +117,7 @@ function makePanel(): { panel: LeftPanel; treeBox: StubElement } {
     makeContainer() as unknown as HTMLElement,
     opener,
     uiHost,
-    () => {},
+    onRefresh,
     () => {},
     () => {},
     () => [],
@@ -119,7 +125,13 @@ function makePanel(): { panel: LeftPanel; treeBox: StubElement } {
     exportFlow,
     treeOps,
   );
-  return { panel, treeBox: (panel as unknown as { treeBox: StubElement }).treeBox };
+  const priv = panel as unknown as {
+    treeBox: StubElement;
+    warnBox: StubElement;
+    warnClearBtn: StubElement;
+    rootEl: StubElement;
+  };
+  return { panel, ...priv };
 }
 
 const SNAPSHOT_FILES: IFileStat[] = [
@@ -185,5 +197,97 @@ describe('文件树渲染（渲染入口直调 renderChildren，根不渲染自�
     const active = findAll(treeBox, (el) => el.classList.contains('is-active'));
     expect(active).toHaveLength(1);
     expect(namesIn(active[0], 'mms-file-name')).toEqual(['a.mms']);
+  });
+});
+
+// ---------------------------------------------------------------- 调试信息清空
+
+const WARNINGS: IWarning[] = [
+  {
+    type: 'level-skip',
+    severity: 'info',
+    message: '层级从 2 跳到 3，缺失层级已自动补空节点',
+    filePath: '综合演示/技术架构.mms',
+    lineNo: 21,
+    autoFixed: true,
+  },
+  {
+    type: 'missing-target',
+    severity: 'warning',
+    message: '跨边目标 "不存在" 在 other.mms 中不存在',
+    filePath: '跨边与反链/基础跨边.mms',
+    lineNo: 9,
+    autoFixed: false,
+  },
+];
+
+/** 渲染一批警告，返回左栏私有节点 */
+function renderWithWarnings(): ReturnType<typeof makePanel> {
+  const ctx = makePanel();
+  ctx.panel.render(
+    { files: SNAPSHOT_FILES, tags: [], activeTag: null, warnings: WARNINGS, currentFilePath: null },
+    true,
+  );
+  return ctx;
+}
+
+const CTX_HINT = '调试信息已清空，下次刷新后恢复';
+
+describe('调试信息清空（清空按钮 / 重扫复位）', () => {
+  it('默认渲染全量告警条目', () => {
+    const { warnBox } = renderWithWarnings();
+    const items = findAll(warnBox, (el) => el.classList.contains('mms-warning-item'));
+    expect(items).toHaveLength(WARNINGS.length);
+  });
+
+  it('点「清空」后列表让位于占位提示，且不再有告警条目', () => {
+    const { warnBox, warnClearBtn } = renderWithWarnings();
+    warnClearBtn.dispatch('click');
+
+    expect(findAll(warnBox, (el) => el.classList.contains('mms-warning-item'))).toHaveLength(0);
+    expect(textsOf(findAll(warnBox, (el) => el.classList.contains('mms-empty-hint')))).toEqual([
+      CTX_HINT,
+    ]);
+  });
+
+  it('纯重绘（标签切换、设置变更走的 render）不恢复已清空状态', () => {
+    const { panel, warnBox, warnClearBtn } = renderWithWarnings();
+    warnClearBtn.dispatch('click');
+    panel.render(
+      { files: SNAPSHOT_FILES, tags: [], activeTag: '综合演示', warnings: WARNINGS, currentFilePath: null },
+      true,
+    );
+    expect(textsOf(findAll(warnBox, (el) => el.classList.contains('mms-empty-hint')))).toEqual([
+      CTX_HINT,
+    ]);
+  });
+
+  it('重扫复位（resetDebugInfo + render）恢复告警列表', () => {
+    const { panel, warnBox, warnClearBtn } = renderWithWarnings();
+    warnClearBtn.dispatch('click');
+    panel.resetDebugInfo();
+    panel.render(
+      { files: SNAPSHOT_FILES, tags: [], activeTag: null, warnings: WARNINGS, currentFilePath: null },
+      true,
+    );
+    expect(findAll(warnBox, (el) => el.classList.contains('mms-warning-item'))).toHaveLength(
+      WARNINGS.length,
+    );
+  });
+
+  it('清空按钮带 title 说明「下次刷新后恢复」', () => {
+    const { warnClearBtn } = renderWithWarnings();
+    expect(warnClearBtn.textContent).toBe('清空');
+    expect(warnClearBtn.getAttribute('title')).toContain('刷新');
+  });
+
+  it('调试信息开关关闭时整段隐藏，清空也不渲染占位', () => {
+    const { panel, warnBox, warnClearBtn } = makePanel();
+    panel.render(
+      { files: SNAPSHOT_FILES, tags: [], activeTag: null, warnings: WARNINGS, currentFilePath: null },
+      false,
+    );
+    warnClearBtn.dispatch('click');
+    expect(warnBox.childNodes).toHaveLength(0);
   });
 });

@@ -11,7 +11,11 @@ import { describe, expect, it } from 'vitest';
 import { parseMms } from '../../../src/core/parser';
 import { layoutTree } from '../../../src/core/layout';
 import { buildOutgoingRefs, resolveCrossFileRefs } from '../../../src/core/index-builder';
-import { createDirectiveRuntime, resolveExtensions } from '../../../src/render/shared/extensions';
+import {
+  createDirectiveRuntime,
+  domNodeStyle,
+  resolveExtensions,
+} from '../../../src/render/shared/extensions';
 import type { IWarning, MmsLayout, MmsLineStyle } from '../../../src/host/types';
 
 const readDemo = (name: string): string =>
@@ -234,8 +238,15 @@ describe('指令扩展/指令基础.mms', () => {
       'line-color': '#95A5F6',
       color: '#C0392B',
       background: '#FDF6E3',
-      'text-color': '#2C3E50',
     });
+  });
+
+  it('同落点按声明距离裁决：自身 color 胜出，文档级 text-color 不覆盖', () => {
+    const root = doc.nodeMap.get('产品路线图')!;
+    const eff = resolveExtensions(root, doc.nodeMap, doc.extensions);
+    expect(eff).toEqual({ color: '#C0392B', background: '#FDF6E3' });
+    // 落地到 CSS：文字砖红，底色米白
+    expect(domNodeStyle(eff)).toEqual({ color: '#C0392B', 'background-color': '#FDF6E3' });
   });
 
   it('每个节点都带 ** 备注（说明效果与颜色中文名）', () => {

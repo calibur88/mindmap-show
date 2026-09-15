@@ -93,11 +93,20 @@ export class LeftPanel {
   private treeBox: HTMLElement;
   private warnBox: HTMLElement;
   private warnSection: HTMLElement;
+  private warnClearBtn: HTMLButtonElement;
   private statusCard: StatusCard;
   /** 当前生效的搜索关键词，空串表示不过滤 */
   private keyword = '';
   /** 最近一次全量快照，供搜索 / 清空只重绘文件树，避免整栏重建 */
   private snapshot: IScanSnapshot | null = null;
+  /**
+   * 调试信息是否处于「已清空」状态。true 时警告列表不渲染，只留占位提示。
+   * 只有 `resetDebugInfo()`（索引重扫完成）能复位——标签切换、搜索、折叠、
+   * 设置重绘都复用同一轮快照，不算重扫，否则用户清空后随手点一下就白清了
+   */
+  private debugCleared = false;
+  /** 最近一次 render 的调试信息开关，供清空后局部重绘复用 */
+  private showWarnings = false;
 
   /** 文件管理器标题栏 + / − 按钮 */
   private treeNewBtn: HTMLButtonElement;
@@ -247,11 +256,22 @@ export class LeftPanel {
     this.rootEl.appendChild(treeSection);
 
     this.warnSection = el('div', { cls: 'mms-section mms-section-warn' });
-    this.warnSection.appendChild(el('div', { cls: 'mms-section-title', text: '调试信息' }));
+    const warnHeader = el('div', { cls: 'mms-section-head' });
+    warnHeader.appendChild(el('div', { cls: 'mms-section-title', text: '调试信息' }));
+    this.warnClearBtn = el('button', {
+      cls: 'mms-mini-btn mms-warn-clear',
+      text: '清空',
+      attr: { type: 'button', title: '清空当前调试信息，下次刷新后恢复' },
+    });
+    this.warnClearBtn.addEventListener('click', () => this.clearDebugInfo());
+    warnHeader.appendChild(this.warnClearBtn);
+    this.warnSection.appendChild(warnHeader);
     this.warnBox = el('div', { cls: 'mms-warning-box mms-scroll' });
     this.warnSection.appendChild(this.warnBox);
     this.rootEl.appendChild(this.warnSection);
 
+    // 手动刷新的复位不在这里做：refresh 完成会广播 index.onUpdate，
+    // 侧栏统一走 resetDebugInfo()，复位逻辑只留一处
     this.statusCard = new StatusCard(this.rootEl, uiHost, onRefresh, openDetailPanel, exportFlow);
   }
 
@@ -263,9 +283,26 @@ export class LeftPanel {
 
   render(snapshot: IScanSnapshot, showWarnings: boolean): void {
     this.snapshot = snapshot;
+    this.showWarnings = showWarnings;
     this.renderTags(snapshot);
     this.renderTree(snapshot);
     this.renderWarnings(snapshot, showWarnings);
+  }
+
+  /**
+   * 复位调试信息的「已清空」态。侧栏在索引重扫完成（index.onUpdate）后调用，
+   * 之后的 render 会重新展示当前工程的告警。手动刷新 / 文件改动自动重扫 /
+   * 命令刷新都走这条路，标签切换等纯重绘不走
+   */
+  resetDebugInfo(): void {
+    this.debugCleared = false;
+  }
+
+  /** 点「清空」：只清屏不回写索引，下次重扫（含手动刷新）自动恢复 */
+  private clearDebugInfo(): void {
+    this.debugCleared = true;
+    if (this.snapshot) this.renderWarnings(this.snapshot, this.showWarnings);
+    else this.warnBox.empty();
   }
 
   /**
@@ -522,6 +559,15 @@ export class LeftPanel {
     }
 
     this.warnSection.style.display = '';
+
+    // 已清空：列表让位于占位提示，重扫后由 resetDebugInfo 复位再重绘才恢复
+    if (this.debugCleared) {
+      this.warnBox.appendChild(el('div', {
+        cls: 'mms-empty-hint',
+        text: '调试信息已清空，下次刷新后恢复',
+      }));
+      return;
+    }
 
     const list = snapshot.currentFilePath === null
       ? snapshot.warnings

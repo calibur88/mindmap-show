@@ -1,6 +1,6 @@
 # .mms 语言规范
 
-> Mind Map Show (MMS) 的源文件格式。文档版本：v1.6（2026-09-16）· 语法版本：`.mms` v1.4
+> Mind Map Show (MMS) 的源文件格式。文档版本：v1.7（2026-09-16）· 语法版本：`.mms` v1.4
 
 `.mms` 是文本文件，扩展名 `.mms`，MIME `text/plain`。语法借鉴 Markdown + 少量自定义符号。所有功能基于这套规范实现，插件只是规范的渲染器。
 
@@ -463,7 +463,7 @@ https://example.com/dashboard
 
 - 行为类三个 key 接交互层，与画法无关，在映射表中无样式落点；不参与继承（§10.4）
 - 两种画法的连线均为 SVG path：`line-color` / `line-width` 只作用于连线（树边取子节点端的有效 extensions），不作用于节点元素
-- 同落点冲突按上表声明顺序应用、后者覆盖前者：`text-color` 与 `color` 在两种画法中同落文字色，`text-color` 声明在后胜出；`background` 独占 SVG 矩形填充，不受 `color` 影响（两画法下 `color` 均为文字色语义，探索与全景视觉一致）
+- 同落点冲突两级裁决：**先比声明距离**（自身 > 祖先链就近 > 文档级兜底，实现见 `render/shared/extensions.ts:resolveExtensions`），更近的声明占住落点后远端同落点 key 不再补齐——文档级兜底不得覆盖节点自身声明；**距离相同时**再按上表声明顺序应用、后者覆盖前者。`text-color` 与 `color` 在两种画法中同落文字色，故节点自身写 `color` 时，文档级 `text-color` 不生效（同级并列时 `text-color` 声明在后胜出）；`background` 独占矩形填充，与 `color` 落点不同、互不影响（两画法下 `color` 均为文字色语义，探索与全景视觉一致）
 - 样式 value 经归一化器校验（合法颜色 / 数字，`opacity` 收敛到 [0,1]），非法值不应用、静默忽略（防 CSS 注入）
 - `transform` / `shadow` / `transition` / `line-dash` / `font` 等因 DOM/SVG 双画法落地成本或语义不对等问题未纳入清单，写了即按未知 key 告警（§10.3）
 

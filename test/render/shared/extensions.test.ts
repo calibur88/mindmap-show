@@ -75,6 +75,55 @@ describe('样式类继承', () => {
   });
 });
 
+describe('同落点别名按声明距离裁决（color / text-color 同落文字色）', () => {
+  it('节点自身的 color 不被文档级兜底的 text-color 覆盖', () => {
+    const doc = parse('!-- text color > #2C3E50\n# R\n!-- color > #C0392B\n## A');
+    // 孤儿指令归一化为 text-color 挂文档级
+    expect(doc.extensions).toEqual({ 'text-color': '#2C3E50' });
+    const r = doc.nodeMap.get('R')!;
+    expect(resolveExtensions(r, doc.nodeMap, doc.extensions)).toEqual({ color: '#C0392B' });
+    // 子节点继承最近的声明（R 的 color），文档级同落点 key 不再补齐
+    const a = doc.nodeMap.get('R>A')!;
+    expect(resolveExtensions(a, doc.nodeMap, doc.extensions)).toEqual({ color: '#C0392B' });
+  });
+
+  it('自身 text-color 优先于祖先的 color', () => {
+    const doc = parse('# R\n!-- color > red\n## A\n!-- text-color > purple\n### B');
+    const a = doc.nodeMap.get('R>A')!;
+    const b = doc.nodeMap.get('R>A>B')!;
+    expect(resolveExtensions(a, doc.nodeMap)).toEqual({ 'text-color': 'purple' });
+    expect(resolveExtensions(b, doc.nodeMap)).toEqual({ 'text-color': 'purple' });
+  });
+
+  it('链上无文字色声明时，文档级 text-color 仍作兜底生效', () => {
+    const doc = parse('!-- text-color > blue\n# R\n## A');
+    const a = doc.nodeMap.get('R>A')!;
+    expect(resolveExtensions(a, doc.nodeMap, doc.extensions)).toEqual({ 'text-color': 'blue' });
+  });
+
+  it('不同落点互不影响：background 与文字色并存', () => {
+    const doc = parse('!-- text-color > blue\n!-- background > white\n# R\n!-- color > red\n## A');
+    const a = doc.nodeMap.get('R>A')!;
+    expect(resolveExtensions(a, doc.nodeMap, doc.extensions)).toEqual({
+      color: 'red',
+      background: 'white',
+    });
+  });
+
+  it('同级并列时仍按映射表声明顺序（text-color 在后胜出）', () => {
+    const doc = parse('# R\n!-- color > red\n!-- text-color > blue\n## A');
+    const r = doc.nodeMap.get('R')!;
+    expect(resolveExtensions(r, doc.nodeMap)).toEqual({ color: 'red', 'text-color': 'blue' });
+    expect(domNodeStyle(resolveExtensions(r, doc.nodeMap))).toEqual({ color: 'blue' });
+  });
+
+  it('落点不同的 key 不互相挤占（line-color 与 color 各自补齐）', () => {
+    const doc = parse('# R\n!-- color > red\n## A\n!-- line-color > green\n-- x');
+    const x = doc.nodeMap.get('R>A>x')!;
+    expect(resolveExtensions(x, doc.nodeMap)).toEqual({ 'line-color': 'green', color: 'red' });
+  });
+});
+
 describe('行为类不继承', () => {
   it('父级的 collapsed 不影响子级', () => {
     const doc = parse('# R\n!-- collapsed\n## A\n-- x');
