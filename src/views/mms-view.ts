@@ -191,7 +191,7 @@ export class MmsView extends FileView {
     this.searchBox = el('input', {
       cls: 'mms-search-input',
       attr: { type: 'search', placeholder: '搜索节点名称、正文、注释、链接…', 'aria-label': '搜索当前文件的节点' },
-    }) as HTMLInputElement;
+    });
     this.searchBox.value = this.searchQuery;
     this.searchBox.addEventListener('input', () => {
       this.searchQuery = this.searchBox?.value ?? '';

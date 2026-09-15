@@ -10,11 +10,19 @@
  * 值校验：所有样式 value 经归一化器校验（防 CSS 注入），非法值不应用、静默忽略
  */
 
-import { BEHAVIOR_DIRECTIVE_KEYS, KNOWN_DIRECTIVE_KEYS } from '../../core/parser/directive';
+import {
+  isBehaviorDirectiveKey,
+  KNOWN_DIRECTIVE_KEYS,
+  type BehaviorDirectiveKey,
+  type DirectiveKey,
+} from '../../core/parser/directive';
 import type { IMmsNode, IParsedDoc } from '../../host/types';
 
-/** 标准 key 联合类型：由白名单常量推导，编译期保证 KEY_RENDERERS 覆盖完整 */
-export type DirectiveKey = (typeof KNOWN_DIRECTIVE_KEYS)[number];
+/**
+ * 标准 key 联合类型：由白名单常量推导，编译期保证 KEY_RENDERERS 覆盖完整。
+ * 权威定义在 `core/parser/directive.ts`（与白名单同处一层），此处转出供渲染层使用
+ */
+export type { DirectiveKey };
 
 // ------------------------------------------------------------ 值归一化器
 
@@ -83,8 +91,8 @@ export const KEY_RENDERERS: Readonly<Record<DirectiveKey, IKeyRenderer>> = {
 
 /** 按 KNOWN_DIRECTIVE_KEYS 声明顺序迭代的有效样式 key（应用顺序的单一依据） */
 const STYLE_KEY_ORDER: readonly DirectiveKey[] = KNOWN_DIRECTIVE_KEYS.filter(
-  (key) => KEY_RENDERERS[key as DirectiveKey].kind === 'style',
-) as DirectiveKey[];
+  (key) => KEY_RENDERERS[key].kind === 'style',
+);
 
 // ------------------------------------------------------------ 继承
 
@@ -114,14 +122,14 @@ export function resolveExtensions(
     visited.add(parent.id);
 
     for (const [key, value] of Object.entries(parent.extensions ?? {})) {
-      if (BEHAVIOR_DIRECTIVE_KEYS.includes(key)) continue;
+      if (isBehaviorDirectiveKey(key)) continue;
       if (!(key in result)) result[key] = value;
     }
     parentId = parent.parentIds[0];
   }
 
   for (const [key, value] of Object.entries(base ?? {})) {
-    if (BEHAVIOR_DIRECTIVE_KEYS.includes(key)) continue;
+    if (isBehaviorDirectiveKey(key)) continue;
     if (!(key in result)) result[key] = value;
   }
   return result;
@@ -191,7 +199,7 @@ export function edgeStyleOf(ext: Record<string, string>): { stroke?: string; str
  * 行为类判定：key 的有效值为 `'true'` 时启用。
  * ext 应传 resolveExtensions 的结果（行为类不继承，仅自身声明生效）
  */
-export function behaviorEnabled(ext: Record<string, string> | undefined, key: 'collapsed' | 'debug' | 'locked'): boolean {
+export function behaviorEnabled(ext: Record<string, string> | undefined, key: BehaviorDirectiveKey): boolean {
   return ext?.[key] === 'true';
 }
 

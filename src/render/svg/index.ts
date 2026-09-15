@@ -7,6 +7,8 @@
 import type { ILayoutResult, ILayoutNode, IParsedDoc, MmsLayout } from '../../host/types';
 import { layoutTree } from '../../core/layout';
 import { svgEl } from '../../utils/dom';
+import { CANVAS_PADDING } from '../shared/constants';
+import { attachNodeDelegation } from '../shared/delegate';
 import { buildEdgesSvg, type ILineRenderOptions } from '../shared/edges';
 import {
   createDirectiveRuntime,
@@ -27,8 +29,6 @@ export interface PanoramaRenderOptions extends ILineRenderOptions {
   /** 折叠徽标点击回调；currently 为点击前的有效折叠态 */
   onToggleCollapse?: (nodeId: string, currently: boolean) => void;
 }
-
-const PADDING = 24;
 
 /** 折叠徽标锚点：取节点与子层相连的那条边中点（与连线锚点一致） */
 function foldAnchor(box: ILayoutNode, direction: MmsLayout): { x: number; y: number } {
@@ -60,8 +60,8 @@ export function renderPanorama(doc: IParsedDoc, options: PanoramaRenderOptions):
     nodeGap: options.nodeGap,
     levelGap: options.levelGap,
   });
-  const width = Math.max(layout.width + PADDING * 2, 200);
-  const height = Math.max(layout.height + PADDING * 2, 120);
+  const width = Math.max(layout.width + CANVAS_PADDING * 2, 200);
+  const height = Math.max(layout.height + CANVAS_PADDING * 2, 120);
 
   const svg = svgEl('svg', {
     class: 'mms-svg-canvas',
@@ -87,11 +87,11 @@ export function renderPanorama(doc: IParsedDoc, options: PanoramaRenderOptions):
     crossLineWidth: options.crossLineWidth,
     edgeStyle: (edge) => runtime.edgeStyle(edge.to),
   });
-  edges.setAttribute('x', String(PADDING));
-  edges.setAttribute('y', String(PADDING));
+  edges.setAttribute('x', String(CANVAS_PADDING));
+  edges.setAttribute('y', String(CANVAS_PADDING));
   svg.appendChild(edges);
 
-  const group = svgEl('g', { transform: `translate(${PADDING} ${PADDING})` });
+  const group = svgEl('g', { transform: `translate(${CANVAS_PADDING} ${CANVAS_PADDING})` });
   for (const [id, box] of layout.nodes) {
     const node = pruned.map.get(id);
     if (!node) continue;
@@ -187,31 +187,16 @@ export function renderPanorama(doc: IParsedDoc, options: PanoramaRenderOptions):
   }
   svg.appendChild(group);
 
-  // 事件委托：根上单一 click listener，event.target.closest 反查节点。
-  // 一个 listener 管全部节点，重渲染不需要重新绑定（规范 §10.10）
-  if (options.onNodeClick || options.onToggleCollapse) {
-    svg.classList.add('is-clickable');
-    svg.addEventListener('click', (evt) => {
-      const target = evt.target;
-      if (!(target instanceof Element)) return;
-      // 折叠徽标优先分流（徽标位于节点 g 内部，须先于节点分支判断）
-      const fold = target.closest('.mms-svg-fold');
-      if (fold) {
-        if (options.onToggleCollapse) {
-          const nodeId = fold.closest('[data-node-id]')?.getAttribute('data-node-id');
-          if (nodeId) options.onToggleCollapse(nodeId, fold.classList.contains('is-collapsed'));
-        }
-        return;
-      }
-      if (!options.onNodeClick) return;
-      const nodeG = target.closest('.mms-svg-node[data-node-id]');
-      const nodeId = nodeG?.getAttribute('data-node-id');
-      if (!nodeG || !nodeId) return;
-      // locked 拦截：不触发选中（<title> 已提示「已锁定」，CSS 光标 not-allowed）
-      if (nodeG.classList.contains('is-locked')) return;
-      options.onNodeClick(nodeId);
-    });
-  }
+  // 事件委托：根上单一 click listener，分流逻辑与探索视图共用（render/shared/delegate）
+  attachNodeDelegation(
+    svg,
+    {
+      fold: '.mms-svg-fold',
+      node: '.mms-svg-node[data-node-id]',
+      foldNodeId: (fold) => fold.closest('[data-node-id]')?.getAttribute('data-node-id') ?? null,
+    },
+    options,
+  );
 
   return svg;
 }

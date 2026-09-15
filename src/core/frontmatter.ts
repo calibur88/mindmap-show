@@ -6,12 +6,27 @@
 import type { MmsFrontmatter, MmsLayout, MmsLineStyle } from '../host/types';
 import { DEFAULT_LAYOUT, DEFAULT_LINE_STYLE } from '../utils/make-key';
 
+/** 非法 frontmatter 取值的回退记录：原始值被丢弃，生效的是默认值 */
+export interface IFrontmatterFallback {
+  /** 出问题的键，目前只有 `mms_layout` 与 `mms_line` 有合法值域 */
+  key: 'mms_layout' | 'mms_line';
+  /** 用户写的原始值（已剥行内注释与首尾空白） */
+  raw: string;
+  /** 实际生效的回退值 */
+  fallback: MmsLayout | MmsLineStyle;
+}
+
 export interface SplitResult {
   frontmatter: MmsFrontmatter | null;
   /** 剥离 Frontmatter 后的纯正文，下传给层级解析器 */
   body: string;
   /** body 第一行在源文件中的行号（1 起），用于警告与跳转定位 */
   bodyStartLine: number;
+  /**
+   * 非法取值被回退的记录。剥离层只收集不告警，
+   * 由 `parseMms` 统一转成 `frontmatter-fallback` 告警（行号恒为 1）
+   */
+  fallbacks: IFrontmatterFallback[];
 }
 
 const VALID_LAYOUTS: readonly MmsLayout[] = ['TB', 'BT', 'LR', 'RL'];
@@ -73,7 +88,7 @@ export function splitFrontmatter(content: string): SplitResult {
   const lines = normalized.split('\n');
 
   if (lines.length === 0 || lines[0].trim() !== '---') {
-    return { frontmatter: null, body: normalized, bodyStartLine: 1 };
+    return { frontmatter: null, body: normalized, bodyStartLine: 1, fallbacks: [] };
   }
 
   let endIdx = -1;
@@ -85,11 +100,12 @@ export function splitFrontmatter(content: string): SplitResult {
   }
 
   if (endIdx === -1) {
-    return { frontmatter: null, body: normalized, bodyStartLine: 1 };
+    return { frontmatter: null, body: normalized, bodyStartLine: 1, fallbacks: [] };
   }
 
   const rawFm = lines.slice(1, endIdx).join('\n');
   const result: MmsFrontmatter = {};
+  const fallbacks: IFrontmatterFallback[] = [];
 
   const nameMatch = rawFm.match(/^mms_name:\s*(.*)/mi);
   if (nameMatch) result.mms_name = stripInlineComment(nameMatch[1]);
@@ -105,17 +121,24 @@ export function splitFrontmatter(content: string): SplitResult {
 
   const layoutMatch = rawFm.match(/^mms_layout:\s*(.*)/mi);
   if (layoutMatch) {
-    const value = stripInlineComment(layoutMatch[1]).toUpperCase();
+    // 空值视同「没写这个键」（规范 §2.1 的「缺 : 」），只有写出了非法值才记回退
+    const raw = stripInlineComment(layoutMatch[1]);
+    const value = raw.toUpperCase();
     if (VALID_LAYOUTS.includes(value as MmsLayout)) {
       result.mms_layout = value as MmsLayout;
+    } else if (raw) {
+      fallbacks.push({ key: 'mms_layout', raw, fallback: DEFAULT_LAYOUT });
     }
   }
 
   const lineMatch = rawFm.match(/^mms_line:\s*(.*)/mi);
   if (lineMatch) {
-    const value = stripInlineComment(lineMatch[1]).toLowerCase();
+    const raw = stripInlineComment(lineMatch[1]);
+    const value = raw.toLowerCase();
     if (VALID_LINE_STYLES.includes(value as MmsLineStyle)) {
       result.mms_line = value as MmsLineStyle;
+    } else if (raw) {
+      fallbacks.push({ key: 'mms_line', raw, fallback: DEFAULT_LINE_STYLE });
     }
   }
 
@@ -126,6 +149,7 @@ export function splitFrontmatter(content: string): SplitResult {
     frontmatter: Object.keys(result).length ? result : null,
     body: lines.slice(endIdx + 1).join('\n'),
     bodyStartLine: endIdx + 2,
+    fallbacks,
   };
 }
 

@@ -10,6 +10,7 @@
 
 import type { ILayoutEdge, ILayoutNode, ILayoutResult, MmsLayout, MmsLineStyle } from '../../host/types';
 import { svgEl } from '../../utils/dom';
+import { ACCENT_COLOR } from './constants';
 
 /** 连线几何参数。四个方向共用，垂直/水平由 direction 推导 */
 export interface IEdgeGeometry {
@@ -21,6 +22,18 @@ export interface IEdgeGeometry {
 
 /** 安全推力下限（像素），保证任意连线都看得出走向 */
 const MIN_PUSH = 5;
+
+/** 树边颜色（父子层级连线） */
+const TREE_LINE_COLOR = '#7a7a72';
+/** 跨边颜色（`<=>` 引用虚线） */
+const CROSS_LINE_COLOR = ACCENT_COLOR;
+/** 树边透明度 */
+const TREE_LINE_OPACITY = 0.9;
+/** 跨边透明度 */
+const CROSS_LINE_OPACITY = 0.85;
+/** 跨边虚线样式（SVG `stroke-dasharray`） */
+const CROSS_DASH = '6 4';
+
 /** 正对直连（展开轴位移为 0）时的最小鼓起幅度 */
 const MIN_STRAIGHT_BULGE = 25;
 /** 控制点推力相对展开轴位移的最大占比，超过会出现回环与尖刺 */
@@ -73,6 +86,9 @@ export function buildEdgePath(from: ILayoutNode, to: ILayoutNode, geo: IEdgeGeom
   else if (absFlow > STEEP_FACTOR * absSpread) h = Math.max(h, absFlow * STEEP_RATIO);
 
   const s = spread === 0 ? 1 : spread > 0 ? 1 : -1;
+  // 第二控制点的推力方向：常规情况与首控制点反向（两控制点互不交错，杜绝回环与尖刺）；
+  // 正对直连（spread === 0）时因两侧无「左右」之分，改成同向，产生单向弧而非 S 形（规范 §2.4）
+  const sBack = spread === 0 ? s : -s;
 
   let x1: number;
   let y1: number;
@@ -82,14 +98,14 @@ export function buildEdgePath(from: ILayoutNode, to: ILayoutNode, geo: IEdgeGeom
     const ym = (y0 + y3) / 2;
     x1 = x0 + s * h;
     y1 = ym;
-    x2 = x3 - s * h;
+    x2 = x3 + sBack * h;
     y2 = ym;
   } else {
     const xm = (x0 + x3) / 2;
     x1 = xm;
     y1 = y0 + s * h;
     x2 = xm;
-    y2 = y3 - s * h;
+    y2 = y3 + sBack * h;
   }
 
   return `M ${n(x0)} ${n(y0)} C ${n(x1)} ${n(y1)} ${n(x2)} ${n(y2)} ${n(x3)} ${n(y3)}`;
@@ -132,12 +148,12 @@ export function buildEdgesSvg(layout: ILayoutResult, options: IBuildEdgesOptions
     const attr: Record<string, string | number> = {
       d: buildEdgePath(from, to, options),
       fill: 'none',
-      stroke: isCross ? '#7f9cf5' : '#7a7a72',
+      stroke: isCross ? CROSS_LINE_COLOR : TREE_LINE_COLOR,
       'stroke-width': isCross ? options.crossLineWidth : options.treeLineWidth,
       'stroke-linecap': 'round',
-      'stroke-opacity': isCross ? 0.85 : 0.9,
+      'stroke-opacity': isCross ? CROSS_LINE_OPACITY : TREE_LINE_OPACITY,
     };
-    if (isCross) attr['stroke-dasharray'] = '6 4';
+    if (isCross) attr['stroke-dasharray'] = CROSS_DASH;
     // 指令覆盖仅作用于树边（子节点 to 端的有效 extensions，见 edgeStyleOf）
     const override = isCross ? null : options.edgeStyle?.(edge);
     if (override?.stroke !== undefined) attr.stroke = override.stroke;

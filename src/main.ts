@@ -385,28 +385,11 @@ export default class MmsPlugin extends Plugin {
    * 任意步骤失败一律 throw，状态卡显示行内错误并保持展开
    */
   private async confirmSave(rawPath: string, svg: string): Promise<void> {
-    let path = rawPath.trim();
-    if (!path) throw new Error('路径不能为空');
-    path = normalizePath(path);
-    while (path.startsWith('/')) path = path.slice(1);
-    if (!path || path === '/') throw new Error('路径非法');
-    if (path.includes('..')) throw new Error('路径不允许包含 ..');
-    if (!path.toLowerCase().endsWith('.svg')) path += '.svg';
+    const norm = this.normalizeVaultPath(rawPath, '.svg', false);
+    if (!norm.ok) throw new Error(norm.message);
+    const path = norm.path;
 
-    // 逐层 createFolder：Obsidian 没 mkdir -p，按段判存在后建
-    // 并发下 createFolder 可能抛「已存在」，被 catch 兜底
-    const parts = path.split('/').slice(0, -1);
-    let cur = '';
-    for (const seg of parts) {
-      cur = cur ? `${cur}/${seg}` : seg;
-      if (!this.app.vault.getAbstractFileByPath(cur)) {
-        try {
-          await this.app.vault.createFolder(cur);
-        } catch (err) {
-          if (!(err instanceof Error) || !/exist/i.test(err.message)) throw err;
-        }
-      }
-    }
+    await this.ensureFolderChain(path);
 
     // 覆盖确认：取消按 throw Error 处理，状态卡显示行内错误保持展开
     const existing = this.app.vault.getAbstractFileByPath(path);
@@ -423,51 +406,66 @@ export default class MmsPlugin extends Plugin {
     new Notice(`SVG 已保存：${path}`);
   }
 
+  // ========================== 路径工具（导出与文件树共用）==========================
+
+  /**
+   * 路径归一化：trim → normalizePath → 去前导 `/` → 空判 → `..` 判 → 后缀处理。
+   * 输入为相对 vault 根的路径（如 `目录一/新建.mms`），不做 vault 根名前缀校验。
+   * `requireExt` 为真时后缀缺失按非法处理（文件树只接受 `.mms`），否则自动补 `ext`
+   */
+  private normalizeVaultPath(
+    raw: string,
+    ext: '.mms' | '.svg',
+    requireExt: boolean,
+  ): { ok: true; path: string } | { ok: false; message: string } {
+    let path = raw.trim();
+    if (!path) return { ok: false, message: '路径不能为空' };
+    path = normalizePath(path);
+    while (path.startsWith('/')) path = path.slice(1);
+    if (!path || path === '/') return { ok: false, message: '路径非法' };
+    if (path.includes('..')) return { ok: false, message: '路径不允许包含 ..' };
+    if (path.toLowerCase().endsWith(ext)) return { ok: true, path };
+    if (requireExt) return { ok: false, message: `只支持 ${ext} 文件` };
+    return { ok: true, path: path + ext };
+  }
+
+  /**
+   * 逐层创建父目录：Obsidian 没有 mkdir -p，按段判存在后建。
+   * 并发下 createFolder 可能抛「已存在」，按 message 匹配忽略；其余异常向上抛
+   */
+  private async ensureFolderChain(path: string): Promise<void> {
+    const parts = path.split('/').slice(0, -1);
+    let cur = '';
+    for (const seg of parts) {
+      cur = cur ? `${cur}/${seg}` : seg;
+      if (!this.app.vault.getAbstractFileByPath(cur)) {
+        try {
+          await this.app.vault.createFolder(cur);
+        } catch (err) {
+          if (!(err instanceof Error) || !/exist/i.test(err.message)) throw err;
+        }
+      }
+    }
+  }
+
   // ============================ 文件树新增/删除 ============================
 
   /** 新 .mms 文件初始内容：一个最小可解析根节点 */
   private static readonly INITIAL_MMS = '# 新建节点\n';
 
   /**
-   * 路径归一化：trim → normalizePath → 去前导 / → 校验。
-   * 输入为相对 vault 根的路径（如 `目录一/新建.mms`），不做 vault 根名前缀校验
-   */
-  private normalizeTreePath(raw: string): { ok: true; path: string } | { ok: false; reason: 'invalid'; message: string } {
-    let path = raw.trim();
-    if (!path) return { ok: false, reason: 'invalid', message: '路径不能为空' };
-    path = normalizePath(path);
-    while (path.startsWith('/')) path = path.slice(1);
-    if (!path || path === '/') return { ok: false, reason: 'invalid', message: '路径非法' };
-    if (path.includes('..')) return { ok: false, reason: 'invalid', message: '路径不允许包含 ..' };
-    if (!path.toLowerCase().endsWith('.mms')) return { ok: false, reason: 'invalid', message: '只支持 .mms 文件' };
-    return { ok: true, path };
-  }
-
-  /**
-   * 新增 .mms：逐级 createFolder（Obsidian 没 mkdir -p）→ vault.create。
+   * 新增 .mms：逐级 ensureFolderChain → vault.create。
    * 文件已存在 → 不覆盖不创建（reason=exists）；其余异常 → reason=failed
    */
   private async createMmsFile(rawPath: string): Promise<TreeOpResult> {
-    const norm = this.normalizeTreePath(rawPath);
-    if (!norm.ok) return norm;
+    const norm = this.normalizeVaultPath(rawPath, '.mms', true);
+    if (!norm.ok) return { ok: false, reason: 'invalid', message: norm.message };
 
     const existing = this.app.vault.getAbstractFileByPath(norm.path);
     if (existing) return { ok: false, reason: 'exists', message: '文件已存在' };
 
     try {
-      // 逐层建父目录：按段判存在后建，并发抛「已存在」被 catch 兜底
-      const parts = norm.path.split('/').slice(0, -1);
-      let cur = '';
-      for (const seg of parts) {
-        cur = cur ? `${cur}/${seg}` : seg;
-        if (!this.app.vault.getAbstractFileByPath(cur)) {
-          try {
-            await this.app.vault.createFolder(cur);
-          } catch (err) {
-            if (!(err instanceof Error) || !/exist/i.test(err.message)) throw err;
-          }
-        }
-      }
+      await this.ensureFolderChain(norm.path);
       await this.app.vault.create(norm.path, MmsPlugin.INITIAL_MMS);
     } catch (err) {
       console.error('[MMS] 新增文件失败', err);
@@ -483,8 +481,8 @@ export default class MmsPlugin extends Plugin {
 
   /** 删除 .mms：vault.delete。找不到 → not-found；异常 → failed */
   private async deleteMmsFile(rawPath: string): Promise<TreeOpResult> {
-    const norm = this.normalizeTreePath(rawPath);
-    if (!norm.ok) return norm;
+    const norm = this.normalizeVaultPath(rawPath, '.mms', true);
+    if (!norm.ok) return { ok: false, reason: 'invalid', message: norm.message };
 
     const target = this.app.vault.getAbstractFileByPath(norm.path);
     if (!(target instanceof TFile)) return { ok: false, reason: 'not-found', message: '文件不存在' };

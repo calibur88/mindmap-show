@@ -17,9 +17,16 @@ export const DEFAULT_LAYOUT: MmsLayout = 'LR';
 /** 默认连线样式，frontmatter 缺失或非法时使用 */
 export const DEFAULT_LINE_STYLE: MmsLineStyle = 'line';
 
-/** 归一化节点文本：去首尾空白，作为 id 的组成部分 */
+/**
+ * 归一化节点文本，作为 id 的组成部分（规范 §3.3）。
+ * 顺序固定：去零宽字符 → 折叠连续空白 → 去首尾空白。
+ * 零宽字符不算空白，若先 trim，首尾「零宽 + 空白」里的空白会被零宽挡住而留下
+ */
 export function normalizeText(text: string): string {
-  return text.trim();
+  return text
+    .replace(/[\u200B-\u200D\uFEFF]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
 }
 
 /**
@@ -31,26 +38,35 @@ export function makeNodeId(parentId: string | null, text: string): string {
   return parentId ? `${parentId}${ID_SEP}${t}` : t;
 }
 
+/**
+ * 引用目标的公共解析外壳：`trim → 切分 → trim`。
+ * `splitter` 返回 `[文件路径, 节点文本]`，返回 null 表示该写法不含文件路径（按同文件处理）
+ */
+function splitTarget(
+  raw: string,
+  splitter: (trimmed: string) => [string, string] | null,
+): { filePath: string | null; nodeText: string } {
+  const trimmed = raw.trim();
+  const parts = splitter(trimmed);
+  if (!parts) return { filePath: null, nodeText: trimmed };
+  return { filePath: parts[0].trim(), nodeText: parts[1].trim() };
+}
+
 /** 解析 `<=>` 跨边目标：跨文件为 `文件名.mms 节点文本`（空格分隔），同文件为 `节点文本` */
 export function parseRefTarget(raw: string): { filePath: string | null; nodeText: string } {
-  const trimmed = raw.trim();
-  const cross = /^(\S+\.mms)\s+(.+)$/i.exec(trimmed);
-  if (cross) {
-    return { filePath: cross[1], nodeText: cross[2].trim() };
-  }
-  return { filePath: null, nodeText: trimmed };
+  return splitTarget(raw, (trimmed) => {
+    const cross = /^(\S+\.mms)\s+(.+)$/i.exec(trimmed);
+    return cross ? [cross[1], cross[2]] : null;
+  });
 }
 
 /** 解析 `::` 节点引用目标：跨文件为 `文件名.mms::节点文本`，同文件为 `节点文本` */
 export function parseNodeRefTarget(raw: string): { filePath: string | null; nodeText: string } {
-  const idx = raw.indexOf(KEY_SEP);
-  if (idx >= 0) {
-    return {
-      filePath: raw.slice(0, idx).trim(),
-      nodeText: raw.slice(idx + KEY_SEP.length).trim(),
-    };
-  }
-  return { filePath: null, nodeText: raw.trim() };
+  return splitTarget(raw, (trimmed) => {
+    const idx = trimmed.indexOf(KEY_SEP);
+    if (idx < 0) return null;
+    return [trimmed.slice(0, idx), trimmed.slice(idx + KEY_SEP.length)];
+  });
 }
 
 /** 取节点 id 的最后一段作为展示用的短名 */

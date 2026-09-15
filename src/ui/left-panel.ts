@@ -191,13 +191,13 @@ export class LeftPanel {
       cls: 'mms-mini-btn mms-tree-btn',
       text: '+',
       attr: { type: 'button', 'data-action': 'new-file', 'aria-label': '新增文件', title: '新增 .mms 文件' },
-    }) as HTMLButtonElement;
+    });
     this.treeNewBtn.addEventListener('click', () => this.toggleTreeMode('new'));
     this.treeDeleteBtn = el('button', {
       cls: 'mms-mini-btn mms-tree-btn',
       text: '\u2212',
       attr: { type: 'button', 'data-action': 'delete-file', 'aria-label': '删除文件', title: '删除 .mms 文件' },
-    }) as HTMLButtonElement;
+    });
     this.treeDeleteBtn.addEventListener('click', () => this.toggleTreeMode('delete'));
     treeActions.appendChild(this.treeNewBtn);
     treeActions.appendChild(this.treeDeleteBtn);
@@ -210,7 +210,7 @@ export class LeftPanel {
     this.treeInput = el('input', {
       cls: 'mms-tree-input',
       attr: { type: 'text', placeholder: '新增文件', spellcheck: 'false' },
-    }) as HTMLInputElement;
+    });
     // Enter=确认，Esc=取消；input 变化清红框
     this.treeInput.addEventListener('keydown', (e) => {
       if (e.key === 'Enter') {
@@ -221,18 +221,18 @@ export class LeftPanel {
         this.collapseTreeBar();
       }
     });
-    this.treeInput.addEventListener('input', () => this.treeInput.classList.remove('is-invalid'));
+    this.treeInput.addEventListener('input', () => this.clearTreeInvalid());
     this.treeConfirmBtn = el('button', {
       cls: 'mms-mini-btn',
       text: '确认',
       attr: { type: 'button' },
-    }) as HTMLButtonElement;
+    });
     this.treeConfirmBtn.addEventListener('click', () => void this.confirmTree());
     this.treeCancelBtn = el('button', {
       cls: 'mms-mini-btn',
       text: '取消',
       attr: { type: 'button' },
-    }) as HTMLButtonElement;
+    });
     this.treeCancelBtn.addEventListener('click', () => this.collapseTreeBar());
     inputRow.appendChild(this.treeInput);
     inputRow.appendChild(this.treeConfirmBtn);
@@ -341,53 +341,20 @@ export class LeftPanel {
     // 搜索态临时忽略持久化折叠（全部展开），正常态照常应用
     const collapsedList = this.keyword ? [] : this.getCollapsedFolders();
     const root = buildFolderTree(visible);
-    this.renderFolder(root, collapsedList, snapshot.currentFilePath, 0);
+    // 根目录不渲染自身行，直接渲染其子目录与直接文件
+    this.renderChildren(root, collapsedList, snapshot.currentFilePath, this.treeBox);
   }
 
   /**
-   * 递归渲染一个目录节点：目录行（可折叠）+ 子目录 + 直接文件。
+   * 渲染一个目录下的所有子目录与直接文件（同级目录优先，同类按 UTF-8 字节序）。
    * 缩进由 .mms-folder-children 的 padding-left 按层级累加；
    * 子文件/子目录始终渲染进独立容器，折叠只是 toggle 容器的 is-collapsed，
    * 展开时无需重建 DOM，点击后局部更新，滚动位置保持
    */
-  private renderFolder(
-    folder: ITreeFolder,
-    collapsedList: string[],
-    currentFilePath: string | null,
-    depth: number,
-  ): void {
-    const isRoot = folder.path === '';
-    if (!isRoot) {
-      const collapsed = collapsedList.includes(folder.path);
-      const folderRow = el('div', { cls: 'mms-folder-row' });
-      const toggle = el('span', { cls: 'mms-folder-toggle', text: collapsed ? '▸' : '▾' });
-      folderRow.appendChild(toggle);
-      folderRow.appendChild(el('span', { cls: 'mms-folder-name', text: `${folder.name}/` }));
-      this.treeBox.appendChild(folderRow);
-      const childrenBox = el('div', {
-        cls: `mms-folder-children${collapsed ? ' is-collapsed' : ''}`,
-      });
-      folderRow.addEventListener('click', () => {
-        const nowCollapsed = !childrenBox.classList.contains('is-collapsed');
-        childrenBox.classList.toggle('is-collapsed', nowCollapsed);
-        toggle.textContent = nowCollapsed ? '▸' : '▾';
-        this.persistCollapsedFolders(this.withFolderToggled(folder.path, nowCollapsed));
-      });
-      this.treeBox.appendChild(childrenBox);
-      this.renderChildren(folder, collapsedList, currentFilePath, depth, childrenBox);
-    } else {
-      // 根目录不渲染自身行，直接渲染其子目录与文件（与扁平版根目录置顶一致）
-      const childrenBox = this.treeBox;
-      this.renderChildren(folder, collapsedList, currentFilePath, depth, childrenBox);
-    }
-  }
-
-  /** 渲染一个目录下的所有子目录与直接文件（同级目录优先，同类按 UTF-8 字节序） */
   private renderChildren(
     folder: ITreeFolder,
     collapsedList: string[],
     currentFilePath: string | null,
-    depth: number,
     container: HTMLElement,
   ): void {
     // 同级排序：先比类型（目录在前、文件在后），同类型再按名称 UTF-8 字节序。
@@ -436,7 +403,7 @@ export class LeftPanel {
       });
       container.appendChild(folderRow);
       container.appendChild(childrenBox);
-      this.renderChildren(child, collapsedList, currentFilePath, depth + 1, childrenBox);
+      this.renderChildren(child, collapsedList, currentFilePath, childrenBox);
     }
   }
 
@@ -465,7 +432,7 @@ export class LeftPanel {
     }
     this.treeMode = mode;
     this.treeInput.value = '';
-    this.treeInput.classList.remove('is-invalid');
+    this.clearTreeInvalid();
     this.treeInput.placeholder = mode === 'new' ? '新增文件' : '删除文件';
     this.treeNewBtn.classList.toggle('is-active', mode === 'new');
     this.treeDeleteBtn.classList.toggle('is-active', mode === 'delete');
@@ -479,7 +446,7 @@ export class LeftPanel {
     if (this.treeSaving || !this.treeMode) return;
     const path = this.treeInput.value.trim();
     if (!path) {
-      this.setTreeInvalid();
+      this.setTreeInvalid('路径不能为空');
       return;
     }
     this.treeSaving = true;
@@ -494,15 +461,15 @@ export class LeftPanel {
         this.collapseTreeBar();
         return;
       }
-      // 失败：统一红框。删除找不到 → 清空内容、保留输入行打开
-      this.setTreeInvalid();
+      // 失败：统一红框 + 把底层原因挂到 title（hover 可见）。删除找不到 → 清空内容、保留输入行打开
+      this.setTreeInvalid(result.message);
       if (this.treeMode === 'delete' && result.reason === 'not-found') {
         this.treeInput.value = '';
         this.treeInput.focus();
       }
     } catch (err) {
       // 底层意外异常兜底：红框、保留输入
-      this.setTreeInvalid();
+      this.setTreeInvalid('操作失败，详见控制台');
       console.error('[MMS] 文件树操作失败', err);
     } finally {
       this.treeSaving = false;
@@ -514,16 +481,26 @@ export class LeftPanel {
   private collapseTreeBar(): void {
     this.treeMode = null;
     this.treeInput.value = '';
-    this.treeInput.classList.remove('is-invalid');
+    this.clearTreeInvalid();
     this.treeNewBtn.classList.remove('is-active');
     this.treeDeleteBtn.classList.remove('is-active');
     this.treeInputBar.style.display = 'none';
   }
 
-  /** 输入框红框错误态：不弹 Notice、不显示错误行，聚焦时保持红 */
-  private setTreeInvalid(): void {
+  /**
+   * 输入框红框错误态：不弹 Notice、不显示错误行，聚焦时保持红。
+   * 传 message 时写到 title，hover 可看具体原因（路径非法／只支持 .mms／文件已存在…）
+   */
+  private setTreeInvalid(message?: string): void {
     this.treeInput.classList.add('is-invalid');
+    if (message) this.treeInput.setAttribute('title', message);
     this.treeInput.focus();
+  }
+
+  /** 清红框与 title 提示。再次输入、切换模式、收起输入行时都要清 */
+  private clearTreeInvalid(): void {
+    this.treeInput.classList.remove('is-invalid');
+    this.treeInput.removeAttribute('title');
   }
 
   private setTreeButtonsDisabled(disabled: boolean): void {

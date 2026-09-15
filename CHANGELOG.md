@@ -1,8 +1,47 @@
 # 更新日志
 
-> 文档版本：v1.5（2026-09-11）· 插件版本：1.8.0（当前已推送） · 编写规范见[CONTRIBUTING.md](CONTRIBUTING.md)§6
+> 文档版本：v1.7（2026-09-16）· 插件版本：1.9.0（当前已推送） · 编写规范见[CONTRIBUTING.md](CONTRIBUTING.md)§6
 > 版本按迭代顺序倒序排列，每个版本条目固定分为「插件更新」与「.mms语法更新」两类。
 > 未推送条目：功能已确定但尚未推送时，标题写`## [X.Y.Z] - 未推送`且不写日期；推送后补发布日期并移除「未推送」标记。
+
+## [1.9.0] - 2026-09-16（当前）
+
+> MINOR版本：告警体系收紧（语义拆分 + 新增 `frontmatter-fallback`）+ 节点文本归一化对齐规范 + 连接线画法修正。**含破坏性改动**，见下。
+
+### 插件更新
+
+**告警类型语义拆分**
+
+| 场景 | 原 type | 新 type |
+|---|---|---|
+| `<=>` 缺目标（空目标列表） | `parse-error` | `missing-ref-target` |
+| 真缺 `#` 根节点 | `no-root` | `no-root`（不变） |
+| 多根级标题提示 | `no-root` | `multiple-roots` |
+| `<=>` 目标写成 `文件.mms::节点` | 无（降级为同文件 `missing-target`） | `bad-cross-ref-target` |
+
+- **破坏性**：`WarningType` 移除零产出点的 `parse-error`（其唯一产出点已改为 `missing-ref-target`），现有成员其余不动
+- **破坏性**：`IWarning.severity` 去掉零产出点的 `error` 档（只剩 `warning`／`info`），`getAllWarnings` 排序表与 `.severity-error` 样式同步收窄
+- **破坏性**：`<=> 文件.mms::节点` 不再登记 `crossRefs`、不再画该条虚线，改为记 `bad-cross-ref-target`（文案「检测到语法错误，<=> 不能指向节点」）。按规范 §11.4 该写法本就是非法（`::` 是节点引用语法），**不做历史兼容**
+- `IParsedDoc.desc` 类型由 `string | null` 改为 `string`，缺省 `''`（对齐规范 §2.1 的默认值 `''`）
+- 文档同步：规范 §2.1 非法值表拆出 `frontmatter-fallback`、§2.4 补正对直连的单向弧、§3.4 `parentIds` 更正为去重、§8 警告表按代码重写（12 个成员）；API.md §3.1 `IWarning` 列出全部成员、§3.3 曲线规则补单向弧；API.md 删掉零调用的 §2（未文档化 API，其引用的 `obsidian-internal.d.ts` 已不存在）与 §1.3／§1.4／§1.5 未用行、§6 类名表改用真实类名；ARCHITECTURE.md 删同一幽灵条目、补上新增的 `render/shared` 模块、`core` 约束措辞对齐文字测量的降级实现；示例库 `demo/README.md` 里 BT 示例的旧写法 `<=> 文件.mms::节点` 改为合法的空格分隔写法
+- 指令白名单常量加 `as const`：`KNOWN_DIRECTIVE_KEYS`／`BEHAVIOR_DIRECTIVE_KEYS` 保留字面量，`DirectiveKey` 成为字面量联合，`KEY_RENDERERS` 漏配渲染映射时 `tsc` 立即报错（此前该保证是空头承诺）
+- 配套：新增类型守卫 `isKnownDirectiveKey`／`isBehaviorDirectiveKey`（替代 `includes` 收窄）、`BehaviorDirectiveKey` 联合类型；删除 6 处恒等 DOM 断言与 2 处 `as DirectiveKey`
+- **新增告警** `frontmatter-fallback`：`mms_layout`／`mms_line` 取值非法时回退默认值并如实登记（行号恒为 1，文案含原始值）；取值栏为空视同未写该键，不告警
+- **节点文本归一化补齐规范 §3.3**：去零宽字符（U+200B–U+200D／U+FEFF）＋折叠连续空白。**节点 id 可能变化**——此前仅靠不可见字符或多余空白区分的标题，现在合并为同一节点
+- **曲线连线**：正对直连（展开轴位移为 0）改为两控制点同向偏移，画单向弧而非 S 形；其余三条推力规则、`elbow`、四方向锚点不变
+- 文件树失败提示：失败原因写进输入框 `title`（hover 可见），底层 `TreeOpResult.message` 不再被吞；再次输入／切换模式／收起时一并清除
+- 样式：状态卡按 `.state-synced`／`.state-error` 着色（复用主题 token）；新增 `.mms-modal-buttons` 规则让覆盖确认弹窗按钮行右对齐
+- 内部重构（无行为变化）：双视图共用的节点点击委托抽到 `render/shared/delegate.ts`，画布留白与强调色抽到 `render/shared/constants.ts`，`main.ts` 的路径归一化与逐层建目录收拢为私有方法，删除不可达的 `renderFolder`
+
+### .mms语法更新
+
+- **破坏性**：节点文本归一化补齐规范 §3.3（去零宽字符＋折叠连续空白）。`.mms`语法v1.4本身不变，但**节点 id 可能变化**：此前仅靠不可见字符或连续空白区分的标题，现在合并为同一节点
+- 对已有用户的影响：**不完全兼容**（告警 `type` 字符串与 `desc` 缺省值变化；`<=> 文件.mms::节点` 新增一条告警且该条不再建边；含零宽字符／连续空白的节点文本被归一化，节点 id 与「同名合并」结果可能改变）
+- 示例库：`demo/` 的 17 个 `.mms` 无需修改（无文件使用该非法写法，也无节点文本含零宽字符或连续空白），仅 `demo/README.md` 一处示例修正
+- 测试：全套255例单测通过（12个套件，本版新增51例），`tsc --noEmit`零错误
+- **版本兼容声明**：1.9.0 与 1.8.0 在「节点文本不含零宽字符与连续空白」的文件上解析结果一致；依赖告警 `type` 字符串、`desc === null`，或依赖节点 id 稳定性的外部工具需同步
+
+---
 
 ## [1.8.0] - 2026-09-11
 

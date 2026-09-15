@@ -6,6 +6,8 @@
 import type { ILayoutResult, IMmsNode, IParsedDoc, MmsLayout } from '../../host/types';
 import { layoutTree } from '../../core/layout';
 import { el } from '../../utils/dom';
+import { CANVAS_PADDING } from '../shared/constants';
+import { attachNodeDelegation } from '../shared/delegate';
 import { buildEdgesSvg, type ILineRenderOptions } from '../shared/edges';
 import {
   createDirectiveRuntime,
@@ -27,8 +29,6 @@ export interface ExploreRenderOptions extends ILineRenderOptions {
   /** 折叠徽标点击回调；currently 为点击前的有效折叠态 */
   onToggleCollapse?: (nodeId: string, currently: boolean) => void;
 }
-
-const PADDING = 24;
 
 function buildNode(
   node: IMmsNode,
@@ -113,8 +113,8 @@ export function renderExplore(doc: IParsedDoc, options: ExploreRenderOptions): D
     return fragment;
   }
 
-  const width = layout.width + PADDING * 2;
-  const height = layout.height + PADDING * 2;
+  const width = layout.width + CANVAS_PADDING * 2;
+  const height = layout.height + CANVAS_PADDING * 2;
 
   const canvas = el('div', { cls: 'mms-dom-canvas' });
   canvas.style.width = `${width}px`;
@@ -141,7 +141,7 @@ export function renderExplore(doc: IParsedDoc, options: ExploreRenderOptions): D
     if (!node) continue;
     const nodeEl = buildNode(
       node,
-      { x: box.x + PADDING, y: box.y + PADDING, width: box.width, height: box.height },
+      { x: box.x + CANVAS_PADDING, y: box.y + CANVAS_PADDING, width: box.width, height: box.height },
       runtime.metaOf(node),
       doc.layout,
       options,
@@ -150,31 +150,16 @@ export function renderExplore(doc: IParsedDoc, options: ExploreRenderOptions): D
   }
   canvas.appendChild(layer);
 
-  // 事件委托：画布上单一 click listener，event.target.closest 反查节点（与全景视图同一套分流逻辑）。
-  // 一个 listener 管全部节点，重渲染不需要重新绑定（规范 §10.10）
-  if (options.onNodeClick || options.onToggleCollapse) {
-    canvas.classList.add('is-clickable');
-    canvas.addEventListener('click', (evt) => {
-      const target = evt.target;
-      if (!(target instanceof Element)) return;
-      // 折叠徽标优先分流（徽标位于节点内部，须先于节点分支判断）
-      const fold = target.closest('.mms-fold-btn');
-      if (fold) {
-        if (options.onToggleCollapse) {
-          const nodeId = fold.getAttribute('data-fold-id');
-          if (nodeId) options.onToggleCollapse(nodeId, fold.classList.contains('is-collapsed'));
-        }
-        return;
-      }
-      if (!options.onNodeClick) return;
-      const nodeEl = target.closest('.mms-dom-node[data-node-id]');
-      const nodeId = nodeEl?.getAttribute('data-node-id');
-      if (!nodeEl || !nodeId) return;
-      // locked 拦截：不触发选中（title 已提示「已锁定」，CSS 光标 not-allowed）
-      if (nodeEl.classList.contains('is-locked')) return;
-      options.onNodeClick(nodeId);
-    });
-  }
+  // 事件委托：画布上单一 click listener，分流逻辑与全景视图共用（render/shared/delegate）
+  attachNodeDelegation(
+    canvas,
+    {
+      fold: '.mms-fold-btn',
+      node: '.mms-dom-node[data-node-id]',
+      foldNodeId: (fold) => fold.getAttribute('data-fold-id'),
+    },
+    options,
+  );
 
   fragment.appendChild(canvas);
   return fragment;

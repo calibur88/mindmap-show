@@ -97,11 +97,11 @@ export class MmsIndex {
     }));
   }
 
-  /** 全部文档的解析警告（副本），按 error → warning → info、文件路径、行号排序 */
+  /** 全部文档的解析警告（副本），按 severity（warning → info）、文件路径、行号排序 */
   getAllWarnings(): IWarning[] {
     const out: IWarning[] = [];
     for (const doc of this.docs) out.push(...doc.warnings);
-    const rank: Record<IWarning['severity'], number> = { error: 0, warning: 1, info: 2 };
+    const rank: Record<IWarning['severity'], number> = { warning: 0, info: 1 };
     return out.sort((a, b) => {
       const dr = rank[a.severity] - rank[b.severity];
       if (dr !== 0) return dr;

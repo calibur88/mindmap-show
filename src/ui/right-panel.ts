@@ -277,14 +277,18 @@ export class RightPanel {
       this.interactiveRow(
         card,
         value,
-        () => this.actions.openAndSelect(link.targetPath, link.targetNodeId as string),
+        () => {
+          // 断链条目不产出跳转按钮，运行到此处必然已解析；守卫只为收空值收窄类型，不改行为
+          if (!link.targetNodeId) return;
+          this.actions.openAndSelect(link.targetPath, link.targetNodeId);
+        },
         () => this.actions.openSource(doc.filePath, link.sourceLineNo),
         !link.resolved,
       );
     }
   }
 
-  /** 节点注释（`** ` 行）；未选中或无注释时隐藏卡片 */
+  /** 节点注释（`** ` 行）；卡片始终渲染，未选中／无注释时用占位文案 */
   private renderNodeNote(doc: IParsedDoc, nodeId: string | null): void {
     const card = this.card('节点注释');
     if (!nodeId) {
@@ -307,7 +311,7 @@ export class RightPanel {
     }
   }
 
-  /** 嵌入资源（`![[...]]` 与裸 URL）；未选中或无嵌入时隐藏卡片 */
+  /** 嵌入资源（`![[...]]` 与裸 URL）；卡片始终渲染，未选中／无嵌入时用占位文案 */
   private renderEmbeds(doc: IParsedDoc, nodeId: string | null): void {
     const card = this.card('嵌入资源');
     if (!nodeId) {

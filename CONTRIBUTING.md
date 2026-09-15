@@ -206,7 +206,7 @@ git status                                              # 6.确认改动范围
 - 渲染层保持纯函数：同输入必得同输出，不读全局状态；
 - 生命周期成对：`onOpen`注册的订阅必须在`onClose`注销，避免leaf反复开闭累积回调；
 - 错误语义：解析问题一律产出`IWarning`，不得`throw`中断整库扫描；
-- 未文档化的Obsidian运行时API：先核实运行时确实存在，再写入`host/obsidian/obsidian-internal.d.ts`并加`typeof`守卫；
+- 未文档化的Obsidian运行时API：先核实运行时确实存在，再在`host/obsidian/`下新增类型增强`.d.ts`（有需要时才建）并在调用点加`typeof`守卫；
 - 设置只存偏好：`MmsSettings`不得承载业务数据，新增字段必须同时给默认值；
 - 命名：模块级PascalCase，函数与字段camelCase，常量UPPER_SNAKE，接口`I`前缀，样式类`mms-`前缀；
 - 署名：源码与文档禁止作者／AI／维护者署名，版权声明只在`LICENSE`与`manifest.json`出现。
@@ -260,9 +260,11 @@ function pushBodyLine(line: string): void {
 ## 9. 测试规范
 
 - 运行器：vitest，`environment: node`，`include: ['test/**/*.test.ts']`，用例自动发现、无需手动注册；
-- 套件组织：一个被测模块一个`.test.ts`，置于`test/`下与`src/`同结构的镜像目录中（如`src/core/parser/index.ts`对应`test/core/parser/index.test.ts`）；
+- 套件组织：一个被测模块一个`.test.ts`，置于`test/`下与`src/`同结构的镜像目录中（如`src/core/parser/index.ts`对应`test/core/parser/parser.test.ts`）；
 - 必须新增用例的时机：改`.mms`语法解析、改布局算法、改跨文件引用或反链索引、`demo/`增删示例；
 - 验收类用例直接读`demo/`下的真实素材，避免测试数据与真实素材脱节；
+- `ui/`层的DOM依赖由`test/helpers/dom-stub.ts`提供最小替身，**不引jsdom**；需要新能力时在该替身里补，不要改用真实DOM环境；
+- `test/helpers/`只放测试基础设施，不放用例（不被`include`匹配）；
 - 提交前`npx vitest run`必须全绿，且`npx tsc --noEmit`零错误。
 
 ## 10. git提交规范

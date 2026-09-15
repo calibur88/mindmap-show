@@ -5,6 +5,7 @@
 
 import { describe, expect, it } from 'vitest';
 import { resolveLayout, resolveLineStyle, splitFrontmatter } from '../../src/core/frontmatter';
+import { parseMms } from '../../src/core/parser/index';
 
 describe('splitFrontmatter', () => {
   it('首行不是 --- 时不解析，正文为全文', () => {
@@ -95,5 +96,43 @@ describe('splitFrontmatter', () => {
     const result = splitFrontmatter('\uFEFF---\r\nmms_name: X\r\n---\r\n# 根');
     expect(result.frontmatter?.mms_name).toBe('X');
     expect(result.body).toBe('# 根');
+  });
+});
+
+describe('非法取值的回退记录与 frontmatter-fallback 告警（规范 §2.1 / §8）', () => {
+  it('非法 layout 记进 fallbacks 通道', () => {
+    const result = splitFrontmatter('---\nmms_layout: XX\n---\n# R');
+    expect(result.fallbacks).toEqual([{ key: 'mms_layout', raw: 'XX', fallback: 'LR' }]);
+  });
+
+  it('非法 line 记进 fallbacks 通道', () => {
+    const result = splitFrontmatter('---\nmms_line: ZZ\n---\n# R');
+    expect(result.fallbacks).toEqual([{ key: 'mms_line', raw: 'ZZ', fallback: 'line' }]);
+  });
+
+  it('合法值与空值都不记回退', () => {
+    expect(splitFrontmatter('---\nmms_layout: TB\n---\n# R').fallbacks).toEqual([]);
+    expect(splitFrontmatter('---\nmms_line: CURVE\n---\n# R').fallbacks).toEqual([]);
+    expect(splitFrontmatter('---\nmms_layout:\n---\n# R').fallbacks).toEqual([]);
+    expect(splitFrontmatter('# R').fallbacks).toEqual([]);
+  });
+
+  it('parseMms 把回退记录转成 frontmatter-fallback 告警：行号恒为 1、文案带原始值', () => {
+    const doc = parseMms('---\nmms_layout: XX\nmms_line: ZZ\n---\n# R', 'p.mms');
+    const warnings = doc.warnings.filter((w) => w.type === 'frontmatter-fallback');
+
+    expect(warnings).toHaveLength(2);
+    expect(warnings.every((w) => w.severity === 'warning')).toBe(true);
+    expect(warnings.every((w) => w.lineNo === 1)).toBe(true);
+    expect(warnings[0].message).toContain('XX');
+    expect(warnings[1].message).toContain('ZZ');
+    expect(warnings.every((w) => w.filePath === 'p.mms')).toBe(true);
+    expect(doc.layout).toBe('LR');
+    expect(doc.lineStyle).toBe('line');
+  });
+
+  it('取值合法时不产出该告警', () => {
+    const doc = parseMms('---\nmms_layout: BT\nmms_line: curve\n---\n# R', 'p.mms');
+    expect(doc.warnings.filter((w) => w.type === 'frontmatter-fallback')).toEqual([]);
   });
 });

@@ -8,6 +8,7 @@
  */
 
 import type { IParsedDoc } from '../host/types';
+import { ACCENT_COLOR } from './shared/constants';
 import { renderPanorama, type PanoramaRenderOptions } from './svg';
 
 /**
@@ -21,7 +22,7 @@ const EXPORT_STYLE = `
     stroke: #d4d4cc;
     stroke-width: 1;
   }
-  .mms-svg-node.mms-depth-0 rect { stroke: #7f9cf5; }
+  .mms-svg-node.mms-depth-0 rect { stroke: ${ACCENT_COLOR}; }
   .mms-svg-node.mms-depth-1 rect { stroke: #5dcaa5; }
   .mms-svg-node.mms-depth-2 rect { stroke: #ef9f27; }
   .mms-svg-node.mms-depth-3 rect { stroke: #ed93b1; }
@@ -56,8 +57,8 @@ const EXPORT_STYLE = `
     font-size: 10px;
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   }
-  .mms-svg-fold.is-collapsed circle { stroke: #7f9cf5; }
-  .mms-svg-fold.is-collapsed .mms-svg-fold-text { fill: #7f9cf5; }
+  .mms-svg-fold.is-collapsed circle { stroke: ${ACCENT_COLOR}; }
+  .mms-svg-fold.is-collapsed .mms-svg-fold-text { fill: ${ACCENT_COLOR}; }
 
   .mms-svg-debug {
     fill: #6e6e6a;

@@ -1,6 +1,6 @@
 # .mms 语言规范
 
-> Mind Map Show (MMS) 的源文件格式。文档版本：v1.4（2026-09-10）· 语法版本：`.mms` v1.4
+> Mind Map Show (MMS) 的源文件格式。文档版本：v1.6（2026-09-16）· 语法版本：`.mms` v1.4
 
 `.mms` 是文本文件，扩展名 `.mms`，MIME `text/plain`。语法借鉴 Markdown + 少量自定义符号。所有功能基于这套规范实现，插件只是规范的渲染器。
 
@@ -46,8 +46,9 @@ YAML 风格，必须在文件**开头**且三连横线包裹。
 
 非法值：
 - 缺 `: ` → 字段忽略
-- `mms_layout: XX` → 回退 LR，记 `warning`
-- `mms_line: ZZ` → 回退 `line`
+- `mms_layout: XX` → 回退 LR，记 `frontmatter-fallback` warning（告警行号恒为 1）
+- `mms_line: ZZ` → 回退 `line`，记 `frontmatter-fallback` warning
+- 取值栏为空（如 `mms_layout:`）视同「缺 `: `」：忽略且不记告警
 - `mms_tags` 元素含逗号 → 拆分为多标签
 - `mms_tags` 类型错（不是数组 / 字符串） → 整字段忽略
 
@@ -84,7 +85,7 @@ YAML 风格，必须在文件**开头**且三连横线包裹。
 - **安全推力** `h = max(5, min(H₀, |Δspread| × 0.45))`，`H₀` 为当前视图的层级间距；
 - **正对直连补偿**：展开轴位移为 0 时强制 `h ≥ 25`，保证直连也看得出弧度；
 - **极限陡坡增压**：流向轴位移超过展开轴位移的 3 倍时，`h ≥ |Δflow| × 0.18`；
-- **防错**：左子节点恒向左鼓、右子节点恒向右鼓（垂直布局），控制点永不交错，杜绝回环与尖刺。
+- **防错**：左子节点恒向左鼓、右子节点恒向右鼓（垂直布局），控制点永不交错，杜绝回环与尖刺；正对直连（展开轴位移为 0）时两侧无「左右」之分，两控制点改同一侧偏移，形成单向弧而非 S 形。
 
 `mms_line` 只影响连线形状，不影响布局坐标；跨文件引用虚线同样遵循该样式。
 
@@ -146,7 +147,7 @@ id = parentId === null ? text : parentId + '>' + normalizedText
 -- x         <- 跨父同名，独立节点
 ```
 
-合并后：`node.parentIds = ['R>A', 'R>A']`（同父多次累积）、`childIds` 唯一、`isAutoFix: false`。文本节点属性 (text / depth / lineNo) 取首次出现的。
+合并后：`node.parentIds = ['R>A']`（同父去重，不累积重复值）、`childIds` 唯一、`isAutoFix: false`。文本节点属性 (text / depth / lineNo) 取首次出现的。
 
 ---
 
@@ -285,15 +286,18 @@ annotation 在右栏「节点注释」卡显示（斜体小字 + 蓝条 + 灰底
 
 | type | severity | 触发 |
 |---|---|---|
-| `parse-error` | warning | 解析时无法读取某行 |
-| `no-root` | warning | 文件缺 # 根 |
+| `missing-parent` | warning | `--` 之前没标题（已建自动根）／`<=>` 或 `::` 没有所属节点 |
+| `frontmatter-fallback` | warning | frontmatter 取值非法（`mms_layout`／`mms_line`），已回退默认值；行号恒为 1 |
+| `missing-target` | warning/info | `<=>` 目标不存在（同文件在解析阶段判定，跨文件在索引构建阶段判定）；多个同名目标指向第一个时为 info |
+| `missing-ref-target` | warning | `<=>` 没写出有效目标（空目标列表） |
+| `bad-cross-ref-target` | warning | `<=>` 目标写成 `文件.mms::节点`（`::` 是节点引用语法），该条不登记、不画虚线（§11.4） |
+| `duplicate-merge` | info | 同父下同名节点已合并 |
+| `no-root` | warning | 文件缺 `#` 根，首个标题降级为根 |
+| `multiple-roots` | warning | 出现第二个根级标题，其分支不显示 |
 | `level-skip` | info | 跳级（自动补空节点）|
-| `missing-parent` | warning | `--` 之前没标题（已建自动根）|
-| `missing-target` | warning/info | `<=>` 目标不存在 |
-| `duplicate-merge` | info | 同名节点已合并 |
-| `bad-frontmatter` | warning | YAML 非法 |
 | `directive-target-missing` | warning | `!--` 指令的 `<--` 目标寻址失败（层级不匹配或文本不存在），指令不绑定（§10.5） |
 | `directive-conflict` | warning | 同一节点同一 key 的指令重复，保留先写者（§10.6） |
+| `directive-unknown-key` | warning | `!--` 用了 §10.7 清单外的 key，指令不存储（§10.3） |
 
 写调试信息卡可见，按 severity 排序。
 
@@ -570,7 +574,7 @@ https://example.com/dashboard
 | `文件名.mms::节点文本` | 跨文件节点引用，不建边 |
 | `<=> 节点文本` | 同文件引用链，画虚线 |
 | `<=> 文件名.mms 节点文本` | 跨文件出链/入链，画虚线 |
-| `<=> 文件名.mms::节点文本` | **非法** —— 应拆为 `<=> 文件名.mms 节点文本` |
+| `<=> 文件名.mms::节点文本` | **非法** —— 应拆为 `<=> 文件名.mms 节点文本`；解析器记 `bad-cross-ref-target` 告警，该条不建边、不画虚线（见 §8） |
 
 **设计原则：**
 - `::` = 「去哪儿」（定位）

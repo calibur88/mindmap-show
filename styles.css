@@ -372,7 +372,6 @@
 }
 
 .mms-warning-item.severity-warning { border-left-color: var(--text-warning, #e8a33d); }
-.mms-warning-item.severity-error   { border-left-color: var(--text-error, #e35d5d); }
 .mms-warning-item.severity-info    { border-left-color: var(--text-accent, #7f9cf5); }
 
 /* -------------------------------------------------------- 左栏：状态卡片 */
@@ -388,6 +387,23 @@
   border-top: var(--mms-border);
   background-color: var(--background-primary);
   font-size: 12px;
+}
+
+/* 状态卡状态色：synced 走成功色、error 走错误色。
+   token 复用 Obsidian 主题变量，不新增自定义变量 */
+.mms-status-card.state-synced {
+  color: var(--text-success, #5dcaa5);
+}
+.mms-status-card.state-error {
+  color: var(--text-error, #e35d5d);
+}
+
+/* 覆盖确认弹窗的按钮行：右对齐；间距与 .mms-status-actions 同一 token（--mms-gap） */
+.mms-modal-buttons {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--mms-gap);
 }
 
 /* 三个操作按钮（手动刷新 / 打开详情 / 导出图片）整体居中 + 内部均匀分散：
@@ -1040,8 +1056,9 @@
   cursor: pointer;
 }
 
+/* 文案色随卡片状态走（.state-synced / .state-error），自身不写死 */
 .mms-status-label {
-  color: var(--text-error, #e35d5d);
+  color: inherit;
 }
 
 /* 容器查询：画布够宽时正文多显示几行 */

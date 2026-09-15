@@ -22,7 +22,7 @@ export const TARGET_SEP = '<--';
  * 渲染映射见 render/shared/extensions.ts 的 KEY_RENDERERS（同置一处、同步维护）。
  * 清单外 key 一律记 `directive-unknown-key` 警告且不存储
  */
-export const KNOWN_DIRECTIVE_KEYS: readonly string[] = [
+export const KNOWN_DIRECTIVE_KEYS = [
   'color',
   'text-color',
   'line-color',
@@ -33,7 +33,7 @@ export const KNOWN_DIRECTIVE_KEYS: readonly string[] = [
   'collapsed',
   'debug',
   'locked',
-];
+] as const;
 
 /**
  * 行为类 key 清单（标准 key 清单的子集，规范 §7 为唯一权威来源）。
@@ -41,7 +41,26 @@ export const KNOWN_DIRECTIVE_KEYS: readonly string[] = [
  * 且不参与渲染期的祖先链继承（见 render/shared/extensions.ts）。
  * 三个行为 key 接交互层（折叠状态机 / 调试叠加层 / 锁定），与画法无关
  */
-export const BEHAVIOR_DIRECTIVE_KEYS: readonly string[] = ['collapsed', 'debug', 'locked'];
+export const BEHAVIOR_DIRECTIVE_KEYS = ['collapsed', 'debug', 'locked'] as const;
+
+/**
+ * 标准 key 联合类型：由白名单常量推导（`as const` 保留字面量）。
+ * `KEY_RENDERERS` 以它为键类型，新增白名单 key 而漏加渲染映射时编译期即报错
+ */
+export type DirectiveKey = (typeof KNOWN_DIRECTIVE_KEYS)[number];
+
+/** 行为类 key 联合类型：由行为清单推导，是 `DirectiveKey` 的子集 */
+export type BehaviorDirectiveKey = (typeof BEHAVIOR_DIRECTIVE_KEYS)[number];
+
+/** 标准 key 判定（类型守卫）：清单外 key 一律按未知 key 处理 */
+export function isKnownDirectiveKey(key: string): key is DirectiveKey {
+  return KNOWN_DIRECTIVE_KEYS.some((known) => known === key);
+}
+
+/** 行为类 key 判定（类型守卫）：行为类 value 走布尔语义，且不参与渲染期继承 */
+export function isBehaviorDirectiveKey(key: string): key is BehaviorDirectiveKey {
+  return BEHAVIOR_DIRECTIVE_KEYS.some((known) => known === key);
+}
 
 /** 待回填的一条指令：第一遍主循环收集，第二遍统一回填（支持前向引用） */
 export interface PendingDirective {
@@ -89,7 +108,7 @@ export function normalizeDirectiveKey(raw: string): string {
  */
 export function normalizeDirectiveValue(key: string, raw: string): string {
   const trimmed = raw.trim();
-  if (!BEHAVIOR_DIRECTIVE_KEYS.includes(key)) return trimmed;
+  if (!isBehaviorDirectiveKey(key)) return trimmed;
   if (!trimmed) return 'true';
   return trimmed.toLowerCase() === 'false' ? 'false' : 'true';
 }

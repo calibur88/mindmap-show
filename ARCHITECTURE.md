@@ -1,7 +1,7 @@
 # 项目整体架构
 
-> 本文是Mind Map Show（MMS）工程的权威架构说明。文档版本：v1.6（2026-09-11）
-> 插件版本：1.8.0 · 语法版本：`.mms` v1.4 · 最低依赖：Obsidian1.4.0 · 语言：TypeScript5.7（严格模式）
+> 本文是Mind Map Show（MMS）工程的权威架构说明。文档版本：v1.8（2026-09-16）
+> 插件版本：1.9.0 · 语法版本：`.mms` v1.4 · 最低依赖：Obsidian1.4.0 · 语言：TypeScript5.7（严格模式）
 
 ## 1. 项目定位
 
@@ -39,6 +39,7 @@ mindmap-show/
 ├─ docs/                    .mms语言规范
 ├─ scripts/                 工具脚本（gen_stress_mms.py压测.mms生成器，纯Python标准库）
 ├─ test/                    单测目录（镜像 src/ 结构，与被测模块一一对应）
+├─ .temp/                   本地临时目录：审查 / 验证脚本（probe）与其输出产物，提交前清空
 ├─ styles.css               全部样式集中一处
 ├─ manifest.json            插件清单
 ├─ esbuild.config.mjs       构建脚本（dev／once／production三种模式）
@@ -51,10 +52,11 @@ mindmap-show/
 | 目录 | 用途 | 是否入库 |
 |---|---|---|
 | `demo/` | 随仓库提交的示例素材库，按功能用例分目录，供功能验收与语法演示 | 是 |
-| `test/` | 单测目录，镜像`src/`结构存放`.test.ts`，由vitest自动发现 | 是 |
+| `test/` | 单测目录，镜像`src/`结构存放`.test.ts`，由vitest自动发现；`test/helpers/`只放测试基础设施（最小DOM替身），不含用例 | 是 |
 | `test-vault-local/` | 本地Obsidian测试vault，`local`后缀表示本地专用 | 否 |
 | `dist/` | `npm run build`产出的发布包 | 否 |
 | `test-vault-local/.obsidian/plugins/mindmap-show/` | `dev`／`once`产物的落地目录，Obsidian直接加载这里 | 否 |
+| `.temp/` | 本地一次性验证脚本（`probe-*.ts`）与输出产物（`_build/*.out.txt`、构建/测试日志），**提交前清空**；目录本身可在本地长期保留 | 否 |
 
 ## 3. 代码架构
 
@@ -64,8 +66,7 @@ main.ts                      装配：new适配器 → new索引 → registerVie
  ├─ host/obsidian/
  │   ├─ vault.ts             列目录与读文件（IVaultHost）
  │   ├─ opener.ts            打开脑图／源码／外链（IOpener，同文件复用标签页）
- │   ├─ ui-host.ts           状态广播与提示（IUiHost）
- │   └─ obsidian-internal.d.ts  未进typings的运行时API的类型增强
+ │   └─ ui-host.ts           状态广播与提示（IUiHost）
  ├─ core/
  │   ├─ frontmatter.ts       五个固定键解析与非法值回退
  │   ├─ parser/
@@ -81,6 +82,8 @@ main.ts                      装配：new适配器 → new索引 → registerVie
  │   ├─ dom/index.ts         探索视图（DocumentFragment；指令样式／折叠徽标／调试叠加／事件委托）
  │   ├─ svg/index.ts         全景视图（SVGElement；指令样式／折叠徽标／调试叠加／事件委托）
  │   ├─ svg-export.ts        SVG导出（buildExportSvg：复用全景渲染器＋内联样式＋xmlns，产出可独立打开的文件）
+ │   ├─ shared/constants.ts  两视图共用的几何与配色常量（画布留白／强调色）
+ │   ├─ shared/delegate.ts   两视图共用的节点点击委托（折叠徽标优先分流／locked 拦截）
  │   ├─ shared/edges.ts      两种视图共用的连线路径（line／curve／elbow）
  │   ├─ shared/extensions.ts `!--`指令渲染期继承与语义→画法映射（KEY_RENDERERS／折叠剪枝／运行时）
  │   └─ canvas-viewport.ts   鼠标／触控视口与缩放
@@ -117,7 +120,7 @@ main ──► views ──► ui ──► render ──► controller ──�
 |---|---|
 | `host/types` | 零依赖；是跨层共享interface／type的唯一声明位置（模块私有类型可就地声明） |
 | `host/obsidian` | 仅依赖`host/types`与`obsidian`；未文档化的运行时API必须加`typeof`守卫 |
-| `core` | 禁止`import 'obsidian'`；禁止直接访问DOM；函数保持纯度以便单测 |
+| `core` | 禁止`import 'obsidian'`；禁止参与DOM操作（唯一例外：`core/layout`量文字，已带`typeof document === 'undefined'`降级）；函数保持纯度以便单测 |
 | `render` | 禁止业务逻辑与状态；只接收`IParsedDoc`＋渲染选项 |
 | `ui` | 只做DOM拼装与事件转发，不直接读vault |
 | `views` | 负责生命周期；`onOpen`注册的订阅必须在`onClose`成对注销 |
@@ -225,27 +228,30 @@ npm run dev                                             # watch构建，直出�
 node esbuild.config.mjs once                            # 单次构建，同上目录
 npm run build                                           # tsc --noEmit + 产出dist/
 npx tsc --noEmit                                        # 严格模式类型检查
-npx vitest run                                          # 204例单测
+npx vitest run                                          # 255例单测
 ```
 
 - 构建流程：入口`src/main.ts` → esbuild打包为单文件`main.js` → 连同`manifest.json`与`styles.css`复制到输出目录；输出目录优先级为环境变量`MMS_OUT_DIR`＞`production`时的`dist/`＞其他情况的测试vault插件目录；
-- 测试流程：vitest按`src/**/*.test.ts`自动发现用例，`environment: node`保证零DOM依赖，无需手动注册套件；
+- 测试流程：vitest按`test/**/*.test.ts`自动发现用例，`environment: node`保证核心逻辑零宿主依赖，无需手动注册套件；`ui/`层的DOM依赖由`test/helpers/dom-stub.ts`的最小替身提供，不引jsdom；
 - 类型检查：`tsconfig.json`开启`strict`／`noImplicitAny`／`noUnusedLocals`／`noUnusedParameters`。
 
 测试套件：
 
 | 套件 | 领域 | 例数 |
 |---|---|---|
-| `test/core/frontmatter.test.ts` | frontmatter五个固定键、非法值回退与`mms_tags`块列表 | 15 |
+| `test/core/frontmatter.test.ts` | frontmatter五个固定键、非法值回退与`mms_tags`块列表、`frontmatter-fallback`告警 | 20 |
 | `test/core/parser/parser.test.ts` | 节点层级、正文、注释、跨边、节点引用、嵌入 | 26 |
 | `test/core/parser/directive.test.ts` | `!--`指令：行格式、key归一化、白名单拦截、绑定、寻址、冲突、孤儿、`<**`剥离、绑定行索引 | 47 |
 | `test/core/parser/demo.test.ts` | 按 `demo/` 目录分组的真实素材冒烟与布局算法 | 48 |
 | `test/core/index-builder.test.ts` | 跨文件引用解析、节点引用解析与出链聚合 | 8 |
 | `test/core/layout/layout.test.ts` | 四方向布局的主轴推进与翻转 | 5 |
-| `test/render/shared/edges.test.ts` | 连线锚点、直线／折线插值与曲线安全推力 | 12 |
+| `test/controller/refresh.test.ts` | MmsIndex：并发守卫、状态广播、警告排序、查询接口 | 10 |
+| `test/render/shared/edges.test.ts` | 连线锚点、直线／折线插值与曲线安全推力（含正对直连的单向弧） | 13 |
 | `test/render/shared/extensions.test.ts` | 指令渲染：继承、KEY_RENDERERS映射、值校验、折叠剪枝、运行时、auto不可折叠 | 36 |
-| `test/ui/left-panel.test.ts` | 左栏文件树（递归目录树、UTF-8 排序、同级目录优先）、标题栏「+」「−」新增/删除文件与红边框错误反馈 | 7 |
-| 合计 | — | 204 |
+| `test/ui/left-panel.test.ts` | 左栏文件树（递归目录树、UTF-8 排序、同级目录优先、根不渲染自身行）、标题栏「+」「−」新增/删除文件与红边框错误反馈 | 11 |
+| `test/ui/right-panel.test.ts` | 右栏八卡恒定渲染、引用链文案前缀、断链灰显、空态 | 9 |
+| `test/utils/make-key.test.ts` | 节点 id 构造与归一化（规范 §3.3）、`<=>`／`::`目标解析 | 22 |
+| 合计 | — | 255 |
 
 ## 5. 文档索引
 

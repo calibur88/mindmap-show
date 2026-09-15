@@ -109,20 +109,32 @@ export interface IMmsNode {
 
 // ---------------------------------------------------------------------- 警告
 
+/**
+ * 解析告警类型。语义与 `docs/mms-语言规范.md`§8 对应：
+ * - `missing-ref-target`：`<=>` 没写出有效目标（空目标列表），区别于目标存在性判定的 `missing-target`
+ * - `bad-cross-ref-target`：`<=>` 目标写成 `文件.mms::节点`（`::` 是节点引用语法），属语法误用，该条不建边
+ * - `multiple-roots`：出现第二个根级标题，其分支不显示
+ * - `frontmatter-fallback`：frontmatter 字段取值非法（目前只有 `mms_layout`／`mms_line` 有值域），
+ *   已回退默认值；告警行号恒为 1（frontmatter 起始行）
+ */
 export type WarningType =
   | 'missing-parent'
+  | 'frontmatter-fallback'
   | 'missing-target'
+  | 'missing-ref-target'
+  | 'bad-cross-ref-target'
   | 'duplicate-merge'
   | 'no-root'
+  | 'multiple-roots'
   | 'level-skip'
-  | 'parse-error'
   | 'directive-target-missing'
   | 'directive-conflict'
   | 'directive-unknown-key';
 
 export interface IWarning {
   type: WarningType;
-  severity: 'info' | 'warning' | 'error';
+  /** 只两档：warning 需作者处理，info 为解析期已自动修正 */
+  severity: 'info' | 'warning';
   message: string;
   filePath: string;
   lineNo?: number;
@@ -150,7 +162,8 @@ export interface IParsedDoc {
   /** 连线样式，缺省 `line` */
   lineStyle: MmsLineStyle;
   tags: string[];
-  desc: string | null;
+  /** 文件级备注（`mms_desc`），缺省空串 */
+  desc: string;
   nodes: IMmsNode[];
   nodeMap: Map<string, IMmsNode>;
   rootId: string | null;

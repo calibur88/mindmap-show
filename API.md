@@ -1,8 +1,8 @@
 # API 索引
 
-> Mind Map Show (MMS) - Obsidian 思维导图插件。文档版本：v1.5（2026-09-11）
+> Mind Map Show (MMS) - Obsidian 思维导图插件。文档版本：v1.7（2026-09-16）
 
-本文档列出插件版本1.8.0用到的Obsidian官方API与插件自身API。仅记录真实用到的，不写"未来可能用到的"。
+本文档列出插件版本1.9.0用到的Obsidian官方API与插件自身API。仅记录真实用到的，不写"未来可能用到的"。
 
 ---
 
@@ -33,109 +33,26 @@
 
 | API | 用途 | 备注 |
 |---|---|---|
-| `Vault.getMarkdownFiles()` / `getFiles()` | 列文件 | 用 `getFiles().filter(f => f.extension === 'mms')` |
+| `Vault.getFiles()` | 列文件 | 用 `getFiles().filter(f => f.extension === 'mms')` |
 | `Vault.read(file)` / `cachedRead(file)` | 读文件 | cachedRead 走缓存更便宜 |
 | `Vault.getFileByPath(path)` | 路径查 TFile | 找不到返回 null |
-| `Vault.adapter` | 文件系统适配器 | 桌面 = `FileSystemAdapter`，移动 = 远程 |
-| `FileSystemAdapter.getFullPath(path)` | 取绝对路径 | **必须 `instanceof FileSystemAdapter` 才能调** |
+| `Vault.getAbstractFileByPath(path)` | 路径查文件或文件夹 | 找不到返回 null；建目录与删除前判存在用 |
 | `TFile.extension` | 取扩展名（不带点） | |
 | `TFile.basename` | 去后缀的文件名 | |
 
-### 1.4 元数据与缓存
-
-| API | 用途 | 备注 |
-|---|---|---|
-| `MetadataCache.getFileCache(file)` | 文件缓存（含 frontmatter、链接等） | 解析阶段可省 IO |
-| `FrontmatterCache` 字段：`<key>: string \| string[] \| ...` | frontmatter 类型不固定 | 运行时用 zod / 手写守卫 |
-
-### 1.5 UI 与通知
+### 1.4 UI 与通知
 
 | API | 用途 | 备注 |
 |---|---|---|
 | `Notice(msg)` | 弹出顶栏通知 | 10s 自动消失 |
-| `setIcon(el, name)` | 在元素里画 lucide 图标 | 用于 ribbon 命令图标 |
-| `Platform.isDesktopApp` / `isMobileApp` | 平台判断 | 仅桌面能开系统程序 |
-| `Workspace.on('file-open'\|'active-leaf-change'\|'layout-change')` | 监听事件 | 需在 onload 内注册，注意 off |
 
-### 1.6 设置面板
+### 1.5 设置面板
 
 | API | 用途 | 备注 |
 |---|---|---|
 | `PluginSettingTab(app, plugin)` | 设置页基类 | 重写 `display()` |
 | `Setting(container)` | 一行设置 | addText / addToggle / addSlider / addDropdown |
 | `setPlaceholder / setValue / onChange` | 输入控件 | TextComponent 有 `inputEl.type = 'text'` |
-
----
-
-## 2. 未文档化 / 运行时存在的 API
-
-`.d.ts` 里**不存在**但运行时确实可用，放进 `src/host/obsidian/obsidian-internal.d.ts` 增强类型 + 调用点用 `typeof` 守卫。
-
-### 2.1 `app.viewRegistry`
-
-```ts
-declare module 'obsidian' {
-  interface App {
-    viewRegistry: {
-      /** 给定扩展名，返回注册该扩展名的视图类型。找不到返回 undefined */
-      getTypeByExtension(ext: string): string | undefined;
-      /** 已注册视图的扩展名 -> 视图类型查找表 */
-      typeByExtension: Record<string, string>;
-      /** 已注册的视图类型 -> 工厂 */
-      typeByView: Record<string, ViewCreator>;
-    };
-  }
-}
-```
-
-来源：Obsidian 论坛 #72349（核心开发者 ush 答复）。
-
-**使用模式**：判断某扩展名是否有内置视图，非内置就降级到系统程序。
-
-```ts
-const hasView = typeof (app as any).viewRegistry !== 'undefined'
-  ? !!(app as any).viewRegistry.typeByExtension[ext]
-  : false;
-```
-
-### 2.2 `app.openWithDefaultApp(path)`
-
-```ts
-declare module 'obsidian' {
-  interface App {
-    openWithDefaultApp(path: string): Promise<void>;
-  }
-}
-```
-
-用系统默认程序打开绝对路径（`FileSystemAdapter` 桌面 + 移动均可用）。
-
-### 2.3 `app.showInFolder(path)`
-
-```ts
-declare module 'obsidian' {
-  interface App {
-    showInFolder(path: string): void;
-  }
-}
-```
-
-等价于 `electron.shell.showItemInFolder`，但官方 API（运行时存在，`.d.ts` 未声明）。
-
-### 2.4 `app.secretStorage`
-
-```ts
-declare module 'obsidian' {
-  interface App {
-    secretStorage: {
-      getSecret(key: string): Promise<string | null>;
-      setSecret(key: string, value: string): Promise<void>;
-    };
-  }
-}
-```
-
-需要存敏感数据时用；本插件未使用。
 
 ---
 
@@ -154,7 +71,7 @@ declare module 'obsidian' {
 | `ICrossRef` | 跨边引用（`<=>` 出边） |
 | `INodeRef` | 节点引用（`::` 点对点定位，不建边） |
 | `IMmsNode` | 节点：id / text / type / depth / lineNo / **content** / **annotation** / childIds / parentIds / crossRefs / nodeRefs / incomingRefs / embeds / sourceFilePath / isAutoFix / **extensions**（`!--`指令结果，可选） |
-| `IWarning` | 解析警告（`type` 含指令类：`directive-target-missing`／`directive-conflict`／`directive-unknown-key`，均 warning） |
+| `IWarning` | 解析警告。`type` 共 12 个成员（完整语义表见[.mms语言规范](docs/mms-语言规范.md)§8）：`missing-parent`／`frontmatter-fallback`（frontmatter 取值非法，已回退默认值）／`missing-target`／`missing-ref-target`（`<=>` 空目标）／`bad-cross-ref-target`（`<=>` 目标误写 `文件.mms::节点`，该条不建边）／`duplicate-merge`／`no-root`／`multiple-roots`／`level-skip`／`directive-target-missing`／`directive-conflict`／`directive-unknown-key` |
 | `IParsedDoc` | 一个 .mms 文件的解析结果（含 `layout`、`lineStyle`、`outgoingRefs`、`extensions`——孤儿指令挂文档级、`directiveBindings`——成功绑定指令的行索引（`{key, lineNo, nodeId|null}`，供 UI 写回文档定位指令行），均可选） |
 | `IBacklink` | 入链条目（`<=>` 指向本节点的来源，含本文件；右栏同文件来源显示为「本文件」，sourcePath / sourceLine / sourceNodeId） |
 | `IOutlink` | 出链条目（本文件 `<=>` 指向外部节点，文件级聚合；含 sourceLineNo 供跳源码定位） |
@@ -197,7 +114,7 @@ interface IBuildEdgesOptions {
 | 规则 | 公式 |
 |---|---|
 | 安全推力 | `h = max(5, min(H₀, \|Δspread\| × 0.45))` |
-| 正对直连补偿 | `Δspread = 0` → `h = max(h, 25)` |
+| 正对直连补偿 | `Δspread = 0` → `h = max(h, 25)`；两控制点同向偏移，形成单向弧而非 S 形 |
 | 极限陡坡增压 | `\|Δflow\| > 3\|Δspread\|` 且 `Δspread ≠ 0` → `h = max(h, \|Δflow\| × 0.18)` |
 
 其中垂直布局（`TB`/`BT`）取 `Δspread = x₃ - x₀`、`Δflow = y₃ - y₀`；水平布局（`LR`/`RL`）取 `Δspread = y₃ - y₀`、`Δflow = x₃ - x₀`。
@@ -342,14 +259,14 @@ BEM 变体：
 
 | 模块 | 类前缀 |
 |---|---|
-| 画布 | `.mms-canvas-*`（toolbar / body / footer / name / placeholder） |
-| 视图 | `.mms-explore-*` / `.mms-panorama-*` |
+| 画布 | `.mms-canvas-*`（container / toolbar / body / footer / name） |
+| 视图 | `.mms-dom-*` / `.mms-svg-*` |
 | 节点 | `.mms-dom-node` / `.mms-svg-node` |
-| 边 | `.mms-edge` `.mms-edge-tree` `.mms-edge-cross` |
+| 边 | `.mms-edges`（连线层 SVG 根；`<path>` 不带类名，颜色与线宽走 inline 属性） |
 | 左栏 | `.mms-left-panel` `.mms-section-tag` `.mms-section-tree` `.mms-section-warn` `.mms-tree-header` `.mms-mini-btn.mms-tree-btn` `.mms-tree-input-bar` `.mms-tree-input` `.mms-folder-children` |
 | 错误反馈 | `.mms-save-input.is-invalid` 输入框红边框（文件树输入行与导出图片保存栏统一：聚焦红优先，再次输入／切换模式／收起时清除） |
 | 右栏 | `.mms-info-card` `.mms-info-actions` `.mms-mini-btn` `.mms-empty-hint` |
-| 调试 | `.mms-warning-item` `.severity-info/warning/error` |
+| 调试 | `.mms-warning-item` `.severity-info/warning` |
 | 状态卡 | `.mms-status-card` `.mms-status-label` `.mms-status-btn` `.state-synced/error` `.mms-status-actions` |
 | 导出保存栏 | `.mms-save-bar` `.mms-save-row` `.mms-save-input` |
 | 视口 | `.mms-canvas-body.is-panning`（拖拽期间防文字选中） |

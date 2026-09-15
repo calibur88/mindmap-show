@@ -6,7 +6,7 @@
 import type { IDirectiveBinding, ICrossRef, IMmsNode, INodeRef, IWarning } from '../../host/types';
 import { makeNodeId, normalizeText, parseNodeRefTarget, parseRefTarget, shortNodeName } from '../../utils/make-key';
 import { extractEmbeds, isExternalUrlLine } from './embed';
-import { DIRECTIVE_PREFIX, KNOWN_DIRECTIVE_KEYS, parseDirectiveLine, resolveDirectives, stripLineComment, type PendingDirective } from './directive';
+import { DIRECTIVE_PREFIX, isKnownDirectiveKey, parseDirectiveLine, resolveDirectives, stripLineComment, type PendingDirective } from './directive';
 
 const HEADING_RE = /^(#{1,})\s+(.*)$/;
 const CHILD_RE = /^--\s+(.*)$/;
@@ -157,7 +157,7 @@ export function parseBody(
 
       // 画布只从 rootId 起遍历：出现第二个根级标题时，其子树会整体不可见，必须显式告知
       if (depth === 0 && rootId !== null) {
-        warn('no-root', 'warning', `多个根级标题：仅渲染首个根的子树，"${text}" 分支不显示`, lineNo, false);
+        warn('multiple-roots', 'warning', `多个根级标题：仅渲染首个根的子树，"${text}" 分支不显示`, lineNo, false);
       }
 
       const parent = depth === 0 ? null : pathStack[depth - 1] ?? null;
@@ -220,7 +220,7 @@ export function parseBody(
       const parsed = parseDirectiveLine(line);
       if (parsed) {
         // 白名单拦截：仅支持已实现渲染的标准 key（§10.7），清单外记警告且不存储
-        if (!KNOWN_DIRECTIVE_KEYS.includes(parsed.key)) {
+        if (!isKnownDirectiveKey(parsed.key)) {
           warn(
             'directive-unknown-key',
             'warning',
@@ -321,11 +321,17 @@ function resolveRefs(
       .filter(Boolean);
 
     if (targets.length === 0) {
-      warn('parse-error', 'warning', '跨边引用缺少目标节点', pending.lineNo, false);
+      warn('missing-ref-target', 'warning', '跨边引用缺少目标节点', pending.lineNo, false);
       continue;
     }
 
     for (const raw of targets) {
+      // `::` 是节点引用语法：`<=> 文件.mms::节点` 属语法误用，不建边也不降级为同文件目标缺失
+      if (raw.includes('::')) {
+        warn('bad-cross-ref-target', 'warning', '检测到语法错误，<=> 不能指向节点', pending.lineNo, false);
+        continue;
+      }
+
       const { filePath: refFile, nodeText } = parseRefTarget(raw);
       const targetFile = refFile ?? filePath;
       let resolvedId: string | null = null;

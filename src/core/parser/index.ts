@@ -17,8 +17,20 @@ function deriveDisplayName(filePath: string, mmsName?: string): string {
 /** 将 .mms 文件内容解析为结构化文档。Frontmatter 只在这里剥离一次 */
 export function parseMms(content: string, filePath: string): IParsedDoc {
   const warnings: IWarning[] = [];
-  const { frontmatter, body, bodyStartLine } = splitFrontmatter(content);
+  const { frontmatter, body, bodyStartLine, fallbacks } = splitFrontmatter(content);
   const displayName = deriveDisplayName(filePath, frontmatter?.mms_name);
+
+  // frontmatter 非法取值：回退已在剥离层发生，这里补诊断（行号恒为 1）
+  for (const item of fallbacks) {
+    warnings.push({
+      type: 'frontmatter-fallback',
+      severity: 'warning',
+      message: `${item.key} 的值「${item.raw}」非法，已回退 ${item.fallback}`,
+      filePath,
+      lineNo: 1,
+      autoFixed: false,
+    });
+  }
 
   const { nodes, nodeMap, rootId, extensions, directiveBindings } = parseBody(
     body,
@@ -44,7 +56,7 @@ export function parseMms(content: string, filePath: string): IParsedDoc {
     layout: resolveLayout(frontmatter),
     lineStyle: resolveLineStyle(frontmatter),
     tags: frontmatter?.mms_tags ?? [],
-    desc: frontmatter?.mms_desc ?? null,
+    desc: frontmatter?.mms_desc ?? '',
     nodes,
     nodeMap,
     rootId,

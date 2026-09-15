@@ -14,14 +14,14 @@ Obsidian插件：把`.mms`结构化文本直接渲染为可交互思维导图—
 - **右栏交互跳转**：引用链／入链／出链条目单击高亮（互斥、再点取消），「跳转」按钮未高亮时跳目标节点、高亮后跳源码行（入链跳来源节点、出链高亮跳本文件`<=>`行）；
 - **自动重扫**：`.mms`文件被编辑、重命名或删除后自动触发防抖全库刷新，无需手动点「刷新」；
 - **导出图片**：左栏状态卡「导出图片」把当前脑图导出为标准SVG文件——点击后展开内嵌保存栏（默认路径`export/<源文件名>.svg`可改），走`vault`写入（覆盖需确认），桌面端与移动端体验一致；导出图基于全景渲染器、内联样式与`xmlns`声明，脱离Obsidian主题也能独立打开；
-- **诊断闭环**：跳级、缺根、多根、目标缺失、同名合并等解析告警按`error`→`warning`→`info`排序，常驻左栏调试信息区。
+- **诊断闭环**：跳级、缺根、多根、目标缺失、frontmatter取值非法、同名合并等解析告警按`warning`→`info`排序，常驻左栏调试信息区。
 
-> **文档版本**：v1.7（2026-09-11）· 插件版本：1.8.0
-> **版本兼容性**：1.8.0与1.7.1完全兼容；`.mms`语法升级到v1.4（`mms_tags`新增YAML块列表写法，纯兼容扩展、无存量负担）。存量`data.json`缺新字段时自动补默认值（加载时与`DEFAULT_SETTINGS`浅合并）。
+> **文档版本**：v1.8（2026-09-16）· 插件版本：1.9.0
+> **版本兼容性**：本版含破坏性改动——节点文本归一化（去零宽字符＋折叠连续空白，节点 id 可能变化）、`<=> 文件.mms::节点` 不再建边、告警 `type` 拆分并新增 `frontmatter-fallback`、`IWarning.severity` 去掉零产出点的 `error` 档；节点文本不含零宽字符与连续空白的文件解析结果与 1.8.0 一致。存量`data.json`缺新字段时自动补默认值（加载时与`DEFAULT_SETTINGS`浅合并）。
 
 版本信息：
 
-- 插件版本：1.8.0
+- 插件版本：1.9.0
 - 插件ID：`mindmap-show`
 - 最低依赖：Obsidian1.4.0
 - 语法版本：`.mms` v1.4
@@ -40,7 +40,7 @@ npm install --registry=https://registry.npmmirror.com   # 装依赖，国内建�
 npm run dev                                             # watch构建，产物直出 test-vault-local/.obsidian/plugins/mindmap-show/
 node esbuild.config.mjs once                            # 单次构建，同样直出上述测试vault目录
 npm run build                                           # tsc --noEmit + 产出 dist/
-npx vitest run                                             # 跑 204 例 core/render/ui 层单测
+npx vitest run                                             # 跑 255 例 core/render/ui 层单测
 npx tsc --noEmit                                        # 严格模式类型检查
 ```
 
@@ -103,9 +103,9 @@ mindmap-show/
 │  └─ utils/               DOM工具与键值构造
 ├─ demo/                   入库示例库（17个.mms分7目录，覆盖全部语法）
 ├─ docs/                   .mms语言规范
-├─ test/                   单测目录（镜像src/结构，204例）
+├─ test/                   单测目录（镜像src/结构，255例）
 ├─ styles.css              全部样式集中一处
-├─ manifest.json           插件清单（版本1.8.0）
+├─ manifest.json           插件清单（版本1.9.0）
 └─ test-vault-local/       本地测试vault（local后缀＝本地专用，不入库）
 ```
 
